@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "example.minesweeping",
+  "name": "扫雷",
+  "version": "1.0.0",
+  "sdk": "^1.0.0",
+  "runtime": {
+    "kind": "web",
+    "entry": "dist/index.html"
+  },
+  "save": {
+    "schemaVersion": 1,
+    "supportsResume": true,
+    "checkpointPolicy": "each-action"
+  },
+  "permissions": {
+    "storage": "game-scoped",
+    "directNetwork": false
+  },
+  "ai": {
+    "slots": {
+      "boardGeneration": {
+        "required": true,
+        "operation": "chat.generate",
+        "requires": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "fallback": "bundled-assets"
+      }
+    }
+  }
+}

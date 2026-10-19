@@ -1,0 +1,13 @@
+{
+  "name": "dsh-game-minesweeping",
+  "version": "1.0.0",
+  "description": "DSH GameCenter Minesweeping Example Game",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "build": "node scripts/build.mjs"
+  },
+  "keywords": ["dsh", "gamecenter", "minesweeper"],
+  "author": "salishChen",
+  "license": "MIT"
+}
