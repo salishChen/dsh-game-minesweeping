@@ -32,8 +32,8 @@
 
 ## 3. 兼容性 / Compatibility
 
-- 适配游戏中心 / Game center version: `>=1.0.0 <2.0.0`
-- 适配 DSH / DSH version: `>=0.2.1-rc.2 <0.3.0`
+- 适配游戏中心 / Game center version: >=1.0.0 <2.0.0
+- 适配 DSH / DSH version: >=0.2.1-rc.2 <0.3.0
 
 ## 4. 机器可读块 / Machine-readable block
 
@@ -47,10 +47,10 @@
   "source": {
     "repository": "https://github.com/salishChen/dsh-game-minesweeping.git",
     "ref": "refs/heads/main",
-    "commit": "8d415d8c002b3f8d33ad819a90afbbebd49c3f8f",
+    "commit": "4558e3c06c186ba18a7fa9386607ea0200113087",
     "manifestPath": "gamecenter.json",
     "manifestDigest": "sha256:77f14d68d0dca420147623b77ece80e3bdaba67a4de3c694bb8790d8b47eb5de",
-    "bundleDigest": "sha256:c464f7ff7477a60a74fc19f8aa05274c620d316824f216acd4a132bfffbc5fa9"
+    "bundleDigest": "sha256:93748f03d80f483683706f2b061bc13c597de20c8aa21faafb68291ccd6e532e"
   },
   "display": {
     "schemaVersion": 1,
