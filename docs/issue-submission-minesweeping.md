@@ -1,89 +1,69 @@
-# 扫雷游戏接入 Issue 申报草稿 (Bilingual Draft)
-# Minesweeper Game Submission Issue Draft
+# 游戏上架申请 / Game Listing Request
 
-> **重要声明 / Notice**:  
-> 本文件为**本地未审批、显式不可安装草稿 (DRAFT_NON_INSTALLABLE)**。  
-> 远端代码库已推送最新提交 `83d00ca4ae06e123fa75253818e7e39a3c22b102`（经典纯 IIFE 自包含脚本，严格零 export/import 泄露，经平台 assembleGameDocument 实际装配与 vm.Script 经典解析 100% 验证通过）。  
-> 历史提交 `4601896`、`a017bb4`、`d5c8a36`、`936ffdf`、`358411b`、`5f10605` 及其对应摘要均标为历史记录，不再作为当前发布依据。  
-> 真实浏览器截图在实机验收前按真实情况标注为**未取得**，协议严禁 SVG 媒体，绝不编造虚假截图。  
-> 本草稿等待平台认证与审批流程，不擅自伪造已审批状态。
+## 1. 展示信息 / Display information
 
----
+- **游戏地址 / Game repository URL**（必填 / required）：https://github.com/salishChen/dsh-game-minesweeping.git
+- **游戏名 / Game title**：扫雷 / Minesweeper
+- **一句话简介 / One-line summary**：确定性无猜与经典无AI双模式扫雷 / Deterministic No-Guess & Classic Minesweeper
 
-## Issue 标题 / Issue Title
-`[Draft / 待审批] 扫雷 (example.minesweeping) - 纯逻辑无猜自适应版 (No-Guess Minesweeper)`
+### 简介（Markdown，中英双语）/ Description (Markdown, bilingual)
 
----
+### 玩法与特色 / Gameplay & Features
 
-## Issue 正文 (Markdown) / Issue Body (Markdown)
+- **双模式支持**：AI 辅助确定性无猜模式（起手开阔区，本地多项式推理演练无死猜）与传统经典无 AI 模式（标准随机布雷，无模型依赖）。
+- **DSH 深浅色自适应**：通过受控 MessagePort Bridge 接收 DSH 主题推送，实时随动切肤，不重置棋盘与计时。
+- **状态安全**：接入 GameCenter SDK v1，单调 revision 检查点存盘，支持跨实例关闭恢复。
 
-```markdown
-# 扫雷 (Minesweeper) - 纯逻辑无猜版 / Deterministic No-Guess Edition
+### How to Play
 
-## 游戏简介 / Game Description
+- **Dual Modes**: AI No-Guess mode (first-click open safe area, polynomial solver verified) and Classic non-AI mode.
+- **Adaptive Theme**: Smoothly follows DSH dark/light theme over MessagePort without resets.
+- **State Safety**: GameCenter SDK v1 monotonic checkpoint saving and resume.
 
-### 中文
-经典扫雷的现代 Web 重塑版，专为 DeepSeek Harness 游戏中心环境打造。核心特色为 **AI 辅助生成确定性无猜（No-Guess）对局**，配合本地 3 级多项式推理求解器严格校验，从底层数学逻辑上彻底消除 50/50 纯运气死猜分支。
+## 2. 受控图片 / Controlled media
 
-- **确定性无猜与经典无AI双模式**：
-  - **AI 无猜模式**：起手第一击必开安全开阔区。雷位生成后必须经本地确定性无猜求解器完整演练验证（单格饱和直推、双格差集包含推导、全局雷数守恒约束）；若当前线索无法证明全盘无猜，明确阻断并重新生成，默认路径决不开启猜雷局。
-  - **传统经典无AI模式**：支持脱离 AI 独立运行，使用经典 Fisher-Yates 随机布雷算法，保障首击安全。
-- **DSH 深浅色自适应**：通过受控 MessagePort Bridge 接收 DSH 主题事件（支持 `colorScheme` 与 `theme` 字段，DSH 显式主题严格优先于操作系统偏好），全 CSS 变量高对比度渲染。切肤过程中棋盘格子、已耗时钟、插旗与 RNG 序列 100% 保持，不产生任何重置。
-- **状态安全与受管时钟**：接入 DSH GameCenter SDK v1 生命周期，每动作单调递增 revision 存盘；受管虚拟时钟在暂停时不虚耗现实时间。
+暂无真实截图（实机验收后补充）/ Real runtime screenshots pending real-device acceptance.
 
-### English
-A modern Web adaptation of classic Minesweeper engineered for the DeepSeek Harness Game Center. Features **deterministic no-guess board generation** validated by an offline polynomial-time logical deduction solver, completely eliminating 50/50 guessing dilemmas.
+| 位置 / Slot | URL | sha256 | mime | 宽×高 / W×H | alt |
+| --- | --- | --- | --- | --- | --- |
+| 封面 / cover | — | — | — | — | — |
 
-- **Strict No-Guess Guarantee**: First click is guaranteed to reveal an open safe zone. Board layouts are validated by an offline deduction solver (single-cell deduction, pairwise difference subsets, global mine conservation). If deduction stalls, the layout is rejected; no unverified guessing board is ever started by default.
-- **DSH Dark/Light Mode Adaptive**: Receives DSH theme events over the paired MessagePort Bridge (explicit DSH theme strictly overrides OS preference). Real-time theme toggles preserve 100% of the active board, timer, flags, and RNG stream without resets.
-- **Deterministic State & Clock**: Compliant with GameCenter SDK v1 lifecycle, creating monotonic checkpoint revisions per action; managed virtual clock halts time accumulation during pause.
+## 3. 兼容性 / Compatibility
 
----
+- 适配游戏中心 / Game center version: `>=1.0.0 <2.0.0`
+- 适配 DSH / DSH version: `>=0.2.1-rc.2 <0.3.0`
 
-## 游戏仓库地址 / Game Repository URL
-`https://github.com/salishChen/dsh-game-minesweeping.git`
-
----
-
-## 运行截图与封面 / Media & Screenshots
-- **状态 / Status**: 实机截图未取得，当前暂无 / Real runtime screenshots pending real-device acceptance.
-- **说明 / Note**: 根据目录协议规范（`catalogMetadata.ts`），媒体资源严禁使用 SVG 格式，必须使用真实浏览器环境截取的 PNG/WebP 格式（分辨率 ≤4096，体积 ≤2MiB，HTTPS 托管且附带 SHA256 校验）。当前开发阶段绝不编造虚拟截图，实机测试通过后由 QA 采集并补充真实 PNG 截图。
-
----
-
-## 版本兼容性声明 / Compatibility
-- **游戏自身版本 / Game Version**: `1.0.0`
-- **适配游戏中心版本 / Game Center Range**: `^0.0.0` (对齐 `@dsh-gamecenter/protocol` 现行包基线；待架构正式冻结后更新)
-- **适配 DSH 客户端版本 / DSH Client Range**: `PENDING_DSH_CONFIRMATION` (待架构与项目经理核实 DSH 宿主 package.json engines 后按 fail-closed 原则填入，未证前不猜测)
-
----
-
-## 机器元数据块 / Machine-Readable Metadata (gamecenter-json)
+## 4. 机器可读块 / Machine-readable block
 
 ```gamecenter-json
 {
   "schemaVersion": 1,
-  "status": "DRAFT_NON_INSTALLABLE",
   "gameId": "example.minesweeping",
   "title": "扫雷 / Minesweeper",
+  "summary": "确定性无猜与经典无AI双模式扫雷，支持AI无猜对局生成与DSH深浅色自适应 / Deterministic No-Guess & Classic Minesweeper",
   "version": "1.0.0",
-  "summary": "经典纯逻辑无猜扫雷，支持AI无猜对局生成与DSH深浅色模式自动切换",
-  "compatibility": {
-    "gameCenter": "^0.0.0",
-    "dsh": "PENDING_CONFIRMATION"
-  },
-  "media": {
-    "cover": null,
-    "screenshots": []
-  },
   "source": {
     "repository": "https://github.com/salishChen/dsh-game-minesweeping.git",
-    "commit": "83d00ca4ae06e123fa75253818e7e39a3c22b102",
     "ref": "refs/heads/main",
+    "commit": "83d00ca595c4b76fdf3f263b5f6c35e1019db699",
     "manifestPath": "gamecenter.json",
     "manifestDigest": "sha256:77f14d68d0dca420147623b77ece80e3bdaba67a4de3c694bb8790d8b47eb5de",
-    "bundleDigest": "sha256:1d41af0d94f4f6e2ed8d2814067f46ac5244dc6e81e6e3ef59f045ff09ef9606"
+    "bundleDigest": "sha256:003927f72592675fc9e6adb838c5f23e9a2c7bc6e08d953066ee4966dab91615"
+  },
+  "display": {
+    "schemaVersion": 1,
+    "summary": "确定性无猜与经典无AI双模式扫雷 / Deterministic No-Guess & Classic Minesweeper",
+    "descriptionMarkdown": "### 玩法与特色 / Gameplay & Features\n\n- 确定性无猜与经典无AI双模式\n- DSH 深浅色自适应（MessagePort host.push 随动）\n- 状态安全与每动作检查点存盘恢复\n\n### How to Play\n\n- Dual-mode: AI No-Guess and Classic non-AI\n- Adaptive DSH theme over MessagePort\n- Monotonic checkpoint saves and resume",
+    "cover": null,
+    "screenshots": [],
+    "compatibility": {
+      "gameCenter": ">=1.0.0 <2.0.0",
+      "dsh": ">=0.2.1-rc.2 <0.3.0"
+    }
   }
 }
 ```
-```
+
+## 5. 审核说明 / Review notes
+
+提交固定提交与真实产物摘要，供目录与安装模块校验及审批。
