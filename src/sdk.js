@@ -202,8 +202,9 @@ export class GameCenterClientSDK {
     // 3. 监听宿主在 iframe 握手时投递过来的专用 MessagePort
     if (typeof window !== 'undefined') {
       window.addEventListener('message', (event) => {
-        // 严格防御：仅接收带有端口传递的建立握手包
-        if (event.data && event.data.type === 'dsh-gamecenter:init-port' && event.ports && event.ports[0]) {
+        // 严格防御：接收带有端口传递的建立握手包（支持 dsh-gamecenter:port 与 dsh-gamecenter:init-port）
+        const isPortEvent = event.data && (event.data.type === 'dsh-gamecenter:port' || event.data.type === 'dsh-gamecenter:init-port');
+        if (isPortEvent && event.ports && event.ports[0]) {
           this.bindPort(event.ports[0]);
         }
         // 拒收任何未配对的 window 裸字符串消息，防止来源伪造
