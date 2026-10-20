@@ -6,6 +6,7 @@ let engine = null;
 let sdk = null;
 let timerInterval = null;
 let currentDifficulty = 'beginner'; // 'beginner' | 'intermediate' | 'expert'
+let currentGameMode = 'ai-noguess'; // 'ai-noguess' | 'classic'
 
 const DIFFICULTIES = {
   beginner: { rows: 9, cols: 9, mineCount: 10, label: '初级 (9x9, 10雷)' },
@@ -54,17 +55,25 @@ function updateDisplays() {
   }
 
   const aiBadge = document.getElementById('ai-status-badge');
-  if (aiBadge && engine.aiInfo) {
-    if (engine.aiInfo.source === 'ai') {
-      aiBadge.className = 'status-badge badge-ai';
-      aiBadge.textContent = engine.aiInfo.noGuessVerified
-        ? 'AI 生成：无猜校验通过'
-        : 'AI 生成：已校验(非无猜)';
+  if (aiBadge) {
+    if (engine.gameMode === 'classic') {
+      aiBadge.className = 'status-badge badge-classic';
+      aiBadge.textContent = '模式：传统经典（无 AI）';
+    } else if (engine.aiInfo) {
+      if (engine.aiInfo.source === 'ai') {
+        aiBadge.className = 'status-badge badge-ai';
+        aiBadge.textContent = engine.aiInfo.noGuessVerified
+          ? 'AI 生成：无猜校验通过'
+          : 'AI 生成：已校验(非无猜)';
+      } else {
+        aiBadge.className = 'status-badge badge-fallback';
+        aiBadge.textContent = engine.aiInfo.noGuessVerified
+          ? '本地保底：无猜已验证'
+          : '本地保底：首击安全(未验无猜)';
+      }
     } else {
-      aiBadge.className = 'status-badge badge-fallback';
-      aiBadge.textContent = engine.aiInfo.noGuessVerified
-        ? '本地保底：无猜已验证'
-        : '本地保底：首击安全(未验无猜)';
+      aiBadge.className = 'status-badge badge-ai';
+      aiBadge.textContent = '模式：AI 无猜模式';
     }
   }
 
@@ -141,36 +150,42 @@ async function onCellClick(r, c) {
 
   const isFirst = engine.status === 'ready';
   if (isFirst) {
-    // 首次点击，触发 AI 生成流程并校验（含首击安全）
-    const boardData = await obtainBoardWithValidation({
-      sdk,
-      rows: engine.rows,
-      cols: engine.cols,
-      mineCount: engine.mineCount,
-      firstClick: { row: r, col: c },
-      operationId: `mine-turn-${Date.now()}`
-    });
+    if (engine.gameMode === 'classic') {
+      // 传统无 AI 模式：按照基础扫雷算法生成（随机排除首击，不调用 AI 与无猜求解器）
+      engine.generateClassicMines(r, c);
+      startTimer();
+    } else {
+      // 首次点击，触发 AI 生成流程并校验（含首击安全）
+      const boardData = await obtainBoardWithValidation({
+        sdk,
+        rows: engine.rows,
+        cols: engine.cols,
+        mineCount: engine.mineCount,
+        firstClick: { row: r, col: c },
+        operationId: `mine-turn-${Date.now()}`
+      });
 
-    if (!boardData.ok || !boardData.mines) {
-      const face = document.getElementById('face-btn');
-      if (face) face.textContent = '⚠️';
-      const aiBadge = document.getElementById('ai-status-badge');
-      if (aiBadge) {
-        aiBadge.className = 'status-badge badge-fallback';
-        aiBadge.textContent = '生成受阻：无法证明无猜，请点击重试';
+      if (!boardData.ok || !boardData.mines) {
+        const face = document.getElementById('face-btn');
+        if (face) face.textContent = '⚠️';
+        const aiBadge = document.getElementById('ai-status-badge');
+        if (aiBadge) {
+          aiBadge.className = 'status-badge badge-fallback';
+          aiBadge.textContent = '生成受阻：无法证明无猜，请点击重试';
+        }
+        return;
       }
-      return;
+
+      engine.applyMines(boardData.mines, {
+        source: boardData.source,
+        operationId: boardData.operationId,
+        binding: boardData.binding,
+        validated: true,
+        noGuessVerified: boardData.noGuessVerified
+      });
+
+      startTimer();
     }
-
-    engine.applyMines(boardData.mines, {
-      source: boardData.source,
-      operationId: boardData.operationId,
-      binding: boardData.binding,
-      validated: true,
-      noGuessVerified: boardData.noGuessVerified
-    });
-
-    startTimer();
   }
 
   const res = engine.reveal(r, c);
@@ -226,14 +241,16 @@ function stopTimer() {
   }
 }
 
-async function resetGame(diffKey = currentDifficulty) {
+async function resetGame(diffKey = currentDifficulty, modeKey = currentGameMode) {
   stopTimer();
   currentDifficulty = diffKey;
+  currentGameMode = modeKey;
   const cfg = DIFFICULTIES[diffKey];
   engine = new MinesweeperEngine({
     rows: cfg.rows,
     cols: cfg.cols,
     mineCount: cfg.mineCount,
+    gameMode: modeKey,
     seed: Date.now()
   });
 
@@ -266,6 +283,11 @@ function initApp() {
     },
     restore: async (snapshot) => {
       engine.restore(snapshot);
+      if (engine.gameMode) {
+        currentGameMode = engine.gameMode;
+        const modeSelect = document.getElementById('mode-select');
+        if (modeSelect) modeSelect.value = currentGameMode;
+      }
       renderBoard();
       if (engine.status === 'playing') {
         startTimer();
@@ -286,14 +308,21 @@ function initApp() {
   const diffSelect = document.getElementById('difficulty-select');
   if (diffSelect) {
     diffSelect.addEventListener('change', (e) => {
-      resetGame(e.target.value);
+      resetGame(e.target.value, currentGameMode);
+    });
+  }
+
+  const modeSelect = document.getElementById('mode-select');
+  if (modeSelect) {
+    modeSelect.addEventListener('change', (e) => {
+      resetGame(currentDifficulty, e.target.value);
     });
   }
 
   const faceBtn = document.getElementById('face-btn');
   if (faceBtn) {
     faceBtn.addEventListener('click', () => {
-      resetGame(currentDifficulty);
+      resetGame(currentDifficulty, currentGameMode);
     });
   }
 

@@ -81,7 +81,7 @@ export class GameCenterClientSDK {
 
       // 2. 主题切换协议 (theme:change 或 dsh-gamecenter:theme-change)
       if (data.type === 'theme:change' || data.type === 'dsh-gamecenter:theme-change') {
-        const theme = data.payload?.theme || data.theme;
+        const theme = data.colorScheme || data.payload?.colorScheme || data.theme || data.payload?.theme;
         if (theme === 'dark' || theme === 'light') {
           this.applyTheme(theme, true);
           if (data.requestId && typeof this.port.postMessage === 'function') {

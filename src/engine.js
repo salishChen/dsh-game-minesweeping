@@ -49,6 +49,7 @@ export class MinesweeperEngine {
     this.rng = new SeededRNG(this.rngSeed);
 
     this.status = 'ready'; // 'ready' | 'playing' | 'won' | 'lost' | 'paused'
+    this.gameMode = options.gameMode || 'ai-noguess'; // 'ai-noguess' | 'classic'
     this.previousStatusBeforePause = null;
     this.elapsedMs = 0;
     this.firstClick = null;
@@ -185,6 +186,41 @@ export class MinesweeperEngine {
     return mines;
   }
 
+  /**
+   * 基础经典扫雷算法生成（无 AI 模式）：
+   * 在排除首击安全格的前提下，按照标准经典 Fisher-Yates 随机洗牌布雷，
+   * 不进行 AI 模型调用，也不执行逻辑无猜校验。
+   * @param {number} safeRow 
+   * @param {number} safeCol 
+   */
+  generateClassicMines(safeRow, safeCol) {
+    const totalCells = this.rows * this.cols;
+    const maxMines = Math.min(this.mineCount, totalCells - 1);
+    const candidatePositions = [];
+
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        if (r === safeRow && c === safeCol) continue;
+        candidatePositions.push({ row: r, col: c });
+      }
+    }
+
+    for (let i = candidatePositions.length - 1; i > 0; i--) {
+      const j = this.rng.nextInt(0, i + 1);
+      const temp = candidatePositions[i];
+      candidatePositions[i] = candidatePositions[j];
+      candidatePositions[j] = temp;
+    }
+
+    const mines = candidatePositions.slice(0, maxMines);
+    this.applyMines(mines, {
+      source: 'classic-algorithm',
+      validated: true,
+      noGuessVerified: false
+    });
+    return mines;
+  }
+
   recomputeAdjacentMines() {
     for (let r = 0; r < this.rows; r++) {
       for (let c = 0; c < this.cols; c++) {
@@ -235,7 +271,11 @@ export class MinesweeperEngine {
       this.firstClick = { row, col };
       // 如果此时尚未布置雷，或初击位置有雷，触发首击保护重新部署
       if (!this.hasMinesPlaced() || cell.isMine) {
-        this.generateDeterministicMines(row, col);
+        if (this.gameMode === 'classic') {
+          this.generateClassicMines(row, col);
+        } else {
+          this.generateDeterministicMines(row, col);
+        }
       }
       this.status = 'playing';
     }
@@ -408,6 +448,7 @@ export class MinesweeperEngine {
       rows: this.rows,
       cols: this.cols,
       mineCount: this.mineCount,
+      gameMode: this.gameMode,
       rngSeed: this.rngSeed,
       rngState: this.rng.getState(),
       status: this.status,
@@ -441,6 +482,7 @@ export class MinesweeperEngine {
     this.rows = snapshot.rows;
     this.cols = snapshot.cols;
     this.mineCount = snapshot.mineCount;
+    this.gameMode = snapshot.gameMode || 'ai-noguess';
     this.rngSeed = snapshot.rngSeed;
     this.rng = new SeededRNG(this.rngSeed);
     if (snapshot.rngState) {

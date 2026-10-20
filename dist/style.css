@@ -327,3 +327,15 @@ body {
   color: #fcd34d;
   border: 1px solid #d97706;
 }
+
+.badge-classic {
+  background-color: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #38bdf8;
+}
+
+:root[data-theme="dark"] .badge-classic {
+  background-color: #0c4a6e;
+  color: #7dd3fc;
+  border: 1px solid #0284c7;
+}

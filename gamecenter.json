@@ -20,7 +20,7 @@
   "ai": {
     "slots": {
       "boardGeneration": {
-        "required": true,
+        "required": false,
         "operation": "chat.generate",
         "requires": {
           "input": ["text"],
