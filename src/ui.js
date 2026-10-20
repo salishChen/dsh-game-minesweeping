@@ -57,10 +57,14 @@ function updateDisplays() {
   if (aiBadge && engine.aiInfo) {
     if (engine.aiInfo.source === 'ai') {
       aiBadge.className = 'status-badge badge-ai';
-      aiBadge.textContent = 'AI 生成：已校验通过';
+      aiBadge.textContent = engine.aiInfo.noGuessVerified
+        ? 'AI 生成：无猜校验通过'
+        : 'AI 生成：已校验(非无猜)';
     } else {
       aiBadge.className = 'status-badge badge-fallback';
-      aiBadge.textContent = 'AI 状态：确定性保底';
+      aiBadge.textContent = engine.aiInfo.noGuessVerified
+        ? '本地保底：无猜已验证'
+        : '本地保底：首击安全(未验无猜)';
     }
   }
 
@@ -151,7 +155,8 @@ async function onCellClick(r, c) {
       source: boardData.source,
       operationId: boardData.operationId,
       binding: boardData.binding,
-      validated: true
+      validated: true,
+      noGuessVerified: boardData.noGuessVerified
     });
 
     startTimer();

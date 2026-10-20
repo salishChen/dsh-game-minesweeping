@@ -7,6 +7,7 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
 const engineCode = fs.readFileSync(path.join(rootDir, 'src', 'engine.js'), 'utf-8');
+const solverCode = fs.readFileSync(path.join(rootDir, 'src', 'solver.js'), 'utf-8');
 const aiCode = fs.readFileSync(path.join(rootDir, 'src', 'ai.js'), 'utf-8');
 const sdkCode = fs.readFileSync(path.join(rootDir, 'src', 'sdk.js'), 'utf-8');
 const uiCode = fs.readFileSync(path.join(rootDir, 'src', 'ui.js'), 'utf-8');
@@ -23,19 +24,22 @@ function stripExports(code) {
 
 const bundled = `/**
  * DSH GameCenter - 扫雷自包含前端运行时产物 (Bundled dist/game.js)
- * 包含：确定性规则引擎、AI 校验与保底层、GameCenter SDK 适配层、交互渲染层
+ * 包含：确定性规则引擎、无猜求解器、AI 校验与保底层、GameCenter SDK 适配层、交互渲染层
  */
 
 // --- 模块 1: 确定性规则引擎 (MinesweeperEngine) ---
 ${stripExports(engineCode)}
 
-// --- 模块 2: AI 对局生成与校验 (AI Validator) ---
+// --- 模块 2: 确定性无猜求解器 (No-Guess Solver) ---
+${stripExports(solverCode)}
+
+// --- 模块 3: AI 对局生成与校验 (AI Validator) ---
 ${stripExports(aiCode)}
 
-// --- 模块 3: GameCenter SDK 桥接层 (SDK Client) ---
+// --- 模块 4: GameCenter SDK 桥接层 (SDK Client) ---
 ${stripExports(sdkCode)}
 
-// --- 模块 4: DOM 渲染与事件控制器 ---
+// --- 模块 5: DOM 渲染与事件控制器 ---
 ${stripExports(uiCode)}
 
 // 启动入口

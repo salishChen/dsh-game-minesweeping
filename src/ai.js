@@ -2,12 +2,13 @@
  * AI 对局生成器与校验层 (AI Board Generator & Validator)
  * 
  * 职责：
- * 1. 构造面向 slot 'boardGeneration' 的结构化对局生成请求。
- * 2. 对 AI 模型返回结果执行严密校验（格式、尺寸、雷数、坐标越界、重复雷位、首击保护）。
- * 3. 校验失败或不可用时无缝降级为确定性本地 fixture，决不盲目信任模型自称有效。
+ * 1. 构造面向 slot 'boardGeneration' 的结构化对局生成请求（强调生成无猜对局）。
+ * 2. 对 AI 模型返回结果执行严密校验（格式、尺寸、雷数、坐标越界、重复雷位、首击保护、以及确定性无猜可解性）。
+ * 3. 校验失败或不可用时无缝降级为确定性本地无猜生成器，决不盲目信任模型自称有效，禁止把未经验证随机局标为无猜。
  */
 
 import { SeededRNG } from './engine.js';
+import { solveNoGuess } from './solver.js';
 
 export const BOARD_GENERATION_SCHEMA = {
   type: 'object',
@@ -41,8 +42,8 @@ export function createBoardGenerationRequest({
   firstClick = null
 }) {
   const safeText = firstClick
-    ? `首击坐标 (${firstClick.row}, ${firstClick.col}) 必须绝对安全，严禁在此位置及周边布置地雷。`
-    : '请生成随机雷位。';
+    ? `首击坐标 (${firstClick.row}, ${firstClick.col}) 及其周围严禁布置地雷（必须保证首击为空白开阔区或可推导安全格）。生成的对局必须完全可通过逻辑推理解开（严禁生成必须凭纯运气猜雷的对局）。`
+    : '请生成完全可通过逻辑推理无猜解开的扫雷对局。';
 
   return {
     slot,
@@ -50,11 +51,11 @@ export function createBoardGenerationRequest({
     messages: [
       {
         role: 'system',
-        text: '你是一个扫雷棋盘对局生成器。按照指定的行列与雷数生成地雷位置，格式必须符合 JSON Schema。'
+        text: '你是一个专业的扫雷对局生成器。按照指定的行列与雷数生成地雷位置，格式符合 JSON Schema。核心规则：严禁生成需要纯运气猜雷的分支，生成的局面必须是严格的纯逻辑无猜解（No-Guess）。'
       },
       {
         role: 'user',
-        text: `请为扫雷生成对局：尺寸 ${rows}x${cols}，地雷总数必须严格等于 ${mineCount}。${safeText}`
+        text: `请为扫雷生成无猜对局：尺寸 ${rows}x${cols}，地雷总数严格等于 ${mineCount}。${safeText}`
       }
     ],
     responseSchema: BOARD_GENERATION_SCHEMA
@@ -69,14 +70,16 @@ export function createBoardGenerationRequest({
  * @param {number} expectedCols 
  * @param {number} expectedMineCount 
  * @param {{row: number, col: number}|null} [firstClick] 
- * @returns {{ ok: true, mines: Array<{row: number, col: number}> } | { ok: false, reason: string, code: string }}
+ * @param {{ requireNoGuess?: boolean }} [options] 
+ * @returns {{ ok: true, mines: Array<{row: number, col: number}>, noGuessVerified: boolean, steps?: number } | { ok: false, reason: string, code: string, solver?: object }}
  */
 export function validateBoardGeneration(
   payload,
   expectedRows,
   expectedCols,
   expectedMineCount,
-  firstClick = null
+  firstClick = null,
+  options = {}
 ) {
   if (!payload || typeof payload !== 'object') {
     return { ok: false, code: 'INVALID_PAYLOAD', reason: '生成结果不是有效的 JSON 对象' };
@@ -145,13 +148,124 @@ export function validateBoardGeneration(
         reason: `首击保护违背：在首击坐标 (${firstClick.row}, ${firstClick.col}) 布置了地雷`
       };
     }
+
+    // 5. 确定性无猜可解性校验（首击存在且要求无猜时执行）
+    const requireNoGuess = options.requireNoGuess !== false;
+    if (requireNoGuess) {
+      const solverResult = solveNoGuess(expectedRows, expectedCols, validMines, firstClick);
+      if (!solverResult.solvable) {
+        return {
+          ok: false,
+          code: 'NOT_NO_GUESS_SOLVABLE',
+          reason: `无猜校验失败：对局无法仅凭逻辑推理解开 [${solverResult.reason || 'DEADLOCK_GUESS_REQUIRED'}]，存在纯运气猜雷分支`,
+          solver: solverResult
+        };
+      }
+      return {
+        ok: true,
+        mines: validMines,
+        noGuessVerified: true,
+        steps: solverResult.steps
+      };
+    }
   }
 
-  return { ok: true, mines: validMines };
+  return { ok: true, mines: validMines, noGuessVerified: false };
 }
 
 /**
- * 确定性本地 Fixture 生成器（用于测试与离线安全降级）
+ * 确定性本地无猜棋盘生成器 (Deterministic Local No-Guess Board Generator)
+ * 
+ * 通过围绕首击建立安全开阔区并在候选分布中执行确定性求解验证，
+ * 寻找能在单格直推/双格差集/全局计数规则下完全解开的确定性无猜局。
+ * 若超出最大尝试预算则降级返回随机局，并明确标注 noGuessVerified: false，禁止虚报。
+ */
+export function generateNoGuessBoard(rows, cols, mineCount, firstClick = null, seed = 42, maxAttempts = 60) {
+  const totalCells = rows * cols;
+  const targetCount = Math.min(mineCount, totalCells - 1);
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const attemptSeed = (seed + attempt * 7919) >>> 0;
+    const rng = new SeededRNG(attemptSeed);
+
+    // 候选格：首击及其 8 邻域默认作为空白开阔区排除，确保起手开局有足够线索展开
+    const candidatePositions = [];
+    const protectedZone = new Set();
+    if (firstClick && Number.isInteger(firstClick.row) && Number.isInteger(firstClick.col)) {
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          const pr = firstClick.row + dr;
+          const pc = firstClick.col + dc;
+          if (pr >= 0 && pr < rows && pc >= 0 && pc < cols) {
+            protectedZone.add(`${pr},${pc}`);
+          }
+        }
+      }
+    }
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (protectedZone.has(`${r},${c}`)) continue;
+        candidatePositions.push({ row: r, col: c });
+      }
+    }
+
+    // 若安全区排除后候选格少于雷数，则仅排除首击自身
+    let availableCandidates = candidatePositions;
+    if (availableCandidates.length < targetCount) {
+      availableCandidates = [];
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (firstClick && r === firstClick.row && c === firstClick.col) continue;
+          availableCandidates.push({ row: r, col: c });
+        }
+      }
+    }
+
+    // Fisher-Yates 洗牌
+    for (let i = availableCandidates.length - 1; i > 0; i--) {
+      const j = rng.nextInt(0, i + 1);
+      const tmp = availableCandidates[i];
+      availableCandidates[i] = availableCandidates[j];
+      availableCandidates[j] = tmp;
+    }
+
+    const candidateMines = availableCandidates.slice(0, targetCount);
+
+    if (!firstClick) {
+      return {
+        ok: true,
+        mines: candidateMines,
+        noGuessVerified: false,
+        attempts: attempt + 1
+      };
+    }
+
+    // 执行确定性无猜求解验证
+    const solverRes = solveNoGuess(rows, cols, candidateMines, firstClick);
+    if (solverRes.solvable) {
+      return {
+        ok: true,
+        mines: candidateMines,
+        noGuessVerified: true,
+        attempts: attempt + 1,
+        steps: solverRes.steps
+      };
+    }
+  }
+
+  // 超出预算：退回普通确定性首击安全局，明确标注未经验证 (noGuessVerified: false)
+  const fallbackMines = generateFallbackBoard(rows, cols, mineCount, firstClick, seed);
+  return {
+    ok: false,
+    mines: fallbackMines,
+    noGuessVerified: false,
+    warning: 'EXCEEDED_SEARCH_BUDGET'
+  };
+}
+
+/**
+ * 确定性本地基础 Fixture 生成器（首击安全，不保证无猜）
  */
 export function generateFallbackBoard(rows, cols, mineCount, firstClick = null, seed = 42) {
   const rng = new SeededRNG(seed);
@@ -179,7 +293,7 @@ export function generateFallbackBoard(rows, cols, mineCount, firstClick = null, 
 }
 
 /**
- * 带有校验和保底降级的对局获取流程
+ * 带有严密无猜校验和保底降级的对局获取流程
  */
 export async function obtainBoardWithValidation({
   sdk,
@@ -188,7 +302,8 @@ export async function obtainBoardWithValidation({
   mineCount,
   firstClick = null,
   operationId,
-  fallbackSeed = 1001
+  fallbackSeed = 1001,
+  requireNoGuess = true
 }) {
   if (sdk && sdk.ai && typeof sdk.ai.generate === 'function') {
     try {
@@ -205,46 +320,58 @@ export async function obtainBoardWithValidation({
       const rawOutput = response && response.output ? response.output : response;
       const parsedOutput = typeof rawOutput === 'string' ? JSON.parse(rawOutput) : rawOutput;
 
-      const validation = validateBoardGeneration(parsedOutput, rows, cols, mineCount, firstClick);
+      const validation = validateBoardGeneration(
+        parsedOutput,
+        rows,
+        cols,
+        mineCount,
+        firstClick,
+        { requireNoGuess }
+      );
+
       if (validation.ok) {
         return {
           source: 'ai',
           mines: validation.mines,
           operationId: request.operationId,
           binding: response.binding || null,
-          validated: true
+          validated: true,
+          noGuessVerified: validation.noGuessVerified
         };
       } else {
-        // AI 结果未通过校验，降级为本地 fixture
-        const fallbackMines = generateFallbackBoard(rows, cols, mineCount, firstClick, fallbackSeed);
+        // AI 结果未通过校验（格式不合法或含有死猜），降级为本地确定性无猜生成器
+        const fallbackRes = generateNoGuessBoard(rows, cols, mineCount, firstClick, fallbackSeed);
         return {
           source: 'fallback',
-          mines: fallbackMines,
+          mines: fallbackRes.mines,
           operationId: request.operationId,
           validated: true,
+          noGuessVerified: fallbackRes.noGuessVerified,
           fallbackReason: `AI 结果未通过校验: ${validation.reason} [${validation.code}]`
         };
       }
     } catch (err) {
-      // 调用异常，降级为本地 fixture
-      const fallbackMines = generateFallbackBoard(rows, cols, mineCount, firstClick, fallbackSeed);
+      // 调用异常，降级为本地确定性无猜生成器
+      const fallbackRes = generateNoGuessBoard(rows, cols, mineCount, firstClick, fallbackSeed);
       return {
         source: 'fallback',
-        mines: fallbackMines,
+        mines: fallbackRes.mines,
         operationId,
         validated: true,
+        noGuessVerified: fallbackRes.noGuessVerified,
         fallbackReason: `AI 调用异常: ${err.message}`
       };
     }
   }
 
-  // 无 SDK 环境，直接使用确定性 fixture
-  const fallbackMines = generateFallbackBoard(rows, cols, mineCount, firstClick, fallbackSeed);
+  // 无 SDK 环境，使用确定性本地无猜生成器
+  const fallbackRes = generateNoGuessBoard(rows, cols, mineCount, firstClick, fallbackSeed);
   return {
     source: 'fallback',
-    mines: fallbackMines,
+    mines: fallbackRes.mines,
     operationId: operationId || 'local-fallback',
     validated: true,
+    noGuessVerified: fallbackRes.noGuessVerified,
     fallbackReason: '未接入 SDK 或处于离线 Mock 环境'
   };
 }

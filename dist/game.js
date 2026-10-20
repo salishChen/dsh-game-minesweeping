@@ -1,6 +1,6 @@
 /**
  * DSH GameCenter - 扫雷自包含前端运行时产物 (Bundled dist/game.js)
- * 包含：确定性规则引擎、AI 校验与保底层、GameCenter SDK 适配层、交互渲染层
+ * 包含：确定性规则引擎、无猜求解器、AI 校验与保底层、GameCenter SDK 适配层、交互渲染层
  */
 
 // --- 模块 1: 确定性规则引擎 (MinesweeperEngine) ---
@@ -417,15 +417,320 @@ class MinesweeperEngine {
 }
 
 
-// --- 模块 2: AI 对局生成与校验 (AI Validator) ---
+// --- 模块 2: 确定性无猜求解器 (No-Guess Solver) ---
+/**
+ * 确定性无猜求解器 (Deterministic No-Guess Minesweeper Solver)
+ * 
+ * 推理规则范围 (Deduction Rule Scope):
+ * 1. 经典单格直推 (Single-Cell Deduction):
+ *    - 剩余所需雷数 == 未翻开邻居数 -> 全部未翻开邻居必为雷
+ *    - 剩余所需雷数 == 0 -> 全部未翻开邻居必为安全格
+ * 2. 双格集合包含与差集推导 (Pairwise Subset & Difference Deduction):
+ *    - 若格 A 的未知邻居集 U(A) 是格 B 的未知邻居集 U(B) 的真子集 (U(A) ⊆ U(B))：
+ *      - 差集 diff = U(B) \ U(A) 中包含的雷数严格等于 rem(B) - rem(A)
+ *      - 若 rem(B) - rem(A) == 0 -> diff 全部格子必为安全格
+ *      - 若 rem(B) - rem(A) == |diff| -> diff 全部格子必为雷
+ *    - 该规则覆盖经典的 1-1, 1-2, 1-2-1, 2-1 等边缘线索拓扑
+ * 3. 全局剩余雷数守恒约束 (Global Mine Count Conservation):
+ *    - 全局未标记格子数 == 全局剩余雷数 -> 全部未翻开格子必为雷
+ *    - 全局剩余雷数 == 0 -> 全部未翻开格子必为安全格
+ * 
+ * 判定标准：
+ * 求解器全程仅依据已公开线索进行逻辑演绎，绝不通过偷看未翻开底牌作弊。
+ * 若中途无任何规则可推进，则立即判定存在死猜分支 (DEADLOCK_GUESS_REQUIRED)。
+ */
+
+/**
+ * 模拟对局并验证是否能够无猜解开
+ * 
+ * @param {number} rows 
+ * @param {number} cols 
+ * @param {Array<{row: number, col: number}>} mines 雷位数组
+ * @param {{row: number, col: number}} firstClick 起手首击坐标
+ * @returns {{ solvable: boolean, reason?: string, revealedCount?: number, totalNonMines?: number, steps?: number }}
+ */
+function solveNoGuess(rows, cols, mines, firstClick) {
+  const totalCells = rows * cols;
+  const mineSet = new Set(mines.map(m => `${m.row},${m.col}`));
+  const totalNonMines = totalCells - mineSet.size;
+
+  if (firstClick.row < 0 || firstClick.row >= rows || firstClick.col < 0 || firstClick.col >= cols) {
+    return { solvable: false, reason: 'INVALID_FIRST_CLICK' };
+  }
+
+  const firstKey = `${firstClick.row},${firstClick.col}`;
+  if (mineSet.has(firstKey)) {
+    return { solvable: false, reason: 'FIRST_CLICK_IS_MINE' };
+  }
+
+  // 计算全盘每个格子的实际相邻雷数（仅用于在安全翻开时提供公开线索，不向未公开格泄露）
+  const clueBoard = Array.from({ length: rows }, () => new Int32Array(cols));
+  for (const m of mines) {
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        if (dr === 0 && dc === 0) continue;
+        const nr = m.row + dr;
+        const nc = m.col + dc;
+        if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+          clueBoard[nr][nc]++;
+        }
+      }
+    }
+  }
+
+  // 求解器可见状态
+  // state: 0 = unrevealed, 1 = revealed (safe), 2 = flagged (deduced mine)
+  const cellState = Array.from({ length: rows }, () => new Uint8Array(cols));
+  let revealedCount = 0;
+  let flaggedCount = 0;
+
+  // 辅助函数：翻开安全格及其空白扩散 (Flood Fill)
+  function revealCell(r, c) {
+    if (cellState[r][c] !== 0) return 0;
+    const key = `${r},${c}`;
+    if (mineSet.has(key)) {
+      throw new Error(`Solver bug: attempted to reveal mine at (${r}, ${c})`);
+    }
+
+    const queue = [{ r, c }];
+    cellState[r][c] = 1;
+    let newlyRevealed = 1;
+
+    while (queue.length > 0) {
+      const cur = queue.shift();
+      // 如果线索为 0，向 8 邻域扩散
+      if (clueBoard[cur.r][cur.c] === 0) {
+        for (let dr = -1; dr <= 1; dr++) {
+          for (let dc = -1; dc <= 1; dc++) {
+            if (dr === 0 && dc === 0) continue;
+            const nr = cur.r + dr;
+            const nc = cur.c + dc;
+            if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+              if (cellState[nr][nc] === 0) {
+                cellState[nr][nc] = 1;
+                newlyRevealed++;
+                queue.push({ r: nr, c: nc });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return newlyRevealed;
+  }
+
+  // 第一步：翻开首击格子
+  revealedCount += revealCell(firstClick.row, firstClick.col);
+
+  let steps = 0;
+  const maxSteps = totalCells * 2;
+
+  // 迭代推理主循环
+  while (revealedCount < totalNonMines && steps < maxSteps) {
+    steps++;
+    let progressMade = false;
+
+    // 收集所有处于边界上的已公开数字格子
+    const boundaryCells = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (cellState[r][c] === 1) {
+          const clue = clueBoard[r][c];
+          if (clue === 0) continue; // 0 格子邻居早已被 flood fill 翻开
+
+          const unrevealedNeighbors = [];
+          let flaggedNeighbors = 0;
+
+          for (let dr = -1; dr <= 1; dr++) {
+            for (let dc = -1; dc <= 1; dc++) {
+              if (dr === 0 && dc === 0) continue;
+              const nr = r + dr;
+              const nc = c + dc;
+              if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+                if (cellState[nr][nc] === 0) {
+                  unrevealedNeighbors.push({ r: nr, c: nc, key: `${nr},${nc}` });
+                } else if (cellState[nr][nc] === 2) {
+                  flaggedNeighbors++;
+                }
+              }
+            }
+          }
+
+          if (unrevealedNeighbors.length > 0) {
+            boundaryCells.push({
+              r,
+              c,
+              clue,
+              remainingMines: clue - flaggedNeighbors,
+              unrevealed: unrevealedNeighbors
+            });
+          }
+        }
+      }
+    }
+
+    // 规则 1：单格直推 (Single-cell deduction)
+    const toReveal = new Set();
+    const toFlag = new Set();
+
+    for (const b of boundaryCells) {
+      if (b.remainingMines === 0) {
+        // 剩余所需雷数为 0，所有未翻开邻居全为安全格
+        for (const u of b.unrevealed) {
+          toReveal.add(u.key);
+        }
+      } else if (b.remainingMines === b.unrevealed.length) {
+        // 剩余所需雷数 == 未翻开邻居数，所有未翻开邻居必为雷
+        for (const u of b.unrevealed) {
+          toFlag.add(u.key);
+        }
+      }
+    }
+
+    // 应用单格直推结果
+    if (toFlag.size > 0 || toReveal.size > 0) {
+      for (const key of toFlag) {
+        const [fr, fc] = key.split(',').map(Number);
+        if (cellState[fr][fc] === 0) {
+          cellState[fr][fc] = 2; // flagged
+          flaggedCount++;
+          progressMade = true;
+        }
+      }
+      for (const key of toReveal) {
+        const [rr, rc] = key.split(',').map(Number);
+        if (cellState[rr][rc] === 0) {
+          revealedCount += revealCell(rr, rc);
+          progressMade = true;
+        }
+      }
+      if (progressMade) continue;
+    }
+
+    // 规则 2：双格集合包含与差集推导 (Pairwise subset & difference)
+    for (let i = 0; i < boundaryCells.length; i++) {
+      const b1 = boundaryCells[i];
+      const set1 = new Set(b1.unrevealed.map(u => u.key));
+
+      for (let j = 0; j < boundaryCells.length; j++) {
+        if (i === j) continue;
+        const b2 = boundaryCells[j];
+        if (b2.unrevealed.length <= b1.unrevealed.length) continue;
+
+        // 检查 set1 是否是 set2 的真子集
+        let isSubset = true;
+        for (const k1 of set1) {
+          if (!b2.unrevealed.some(u => u.key === k1)) {
+            isSubset = false;
+            break;
+          }
+        }
+
+        if (isSubset) {
+          const diffKeys = b2.unrevealed.filter(u => !set1.has(u.key));
+          const diffMines = b2.remainingMines - b1.remainingMines;
+
+          if (diffMines === 0) {
+            // 差集内全部为安全格
+            for (const u of diffKeys) {
+              toReveal.add(u.key);
+            }
+          } else if (diffMines === diffKeys.length) {
+            // 差集内全部为雷
+            for (const u of diffKeys) {
+              toFlag.add(u.key);
+            }
+          }
+        }
+      }
+    }
+
+    if (toFlag.size > 0 || toReveal.size > 0) {
+      for (const key of toFlag) {
+        const [fr, fc] = key.split(',').map(Number);
+        if (cellState[fr][fc] === 0) {
+          cellState[fr][fc] = 2;
+          flaggedCount++;
+          progressMade = true;
+        }
+      }
+      for (const key of toReveal) {
+        const [rr, rc] = key.split(',').map(Number);
+        if (cellState[rr][rc] === 0) {
+          revealedCount += revealCell(rr, rc);
+          progressMade = true;
+        }
+      }
+      if (progressMade) continue;
+    }
+
+    // 规则 3：全局剩余雷数守恒约束 (Global Mine Count Conservation)
+    const remainingTotalMines = mines.length - flaggedCount;
+    let totalUnrevealedCount = 0;
+    const globalUnrevealed = [];
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (cellState[r][c] === 0) {
+          totalUnrevealedCount++;
+          globalUnrevealed.push({ r, c, key: `${r},${c}` });
+        }
+      }
+    }
+
+    if (remainingTotalMines === totalUnrevealedCount && totalUnrevealedCount > 0) {
+      // 所有剩下的未翻开格子全部是雷
+      for (const u of globalUnrevealed) {
+        cellState[u.r][u.c] = 2;
+        flaggedCount++;
+      }
+      progressMade = true;
+      continue;
+    } else if (remainingTotalMines === 0 && totalUnrevealedCount > 0) {
+      // 剩余雷数为 0，所有剩下的未翻开格子全部安全
+      for (const u of globalUnrevealed) {
+        revealedCount += revealCell(u.r, u.c);
+      }
+      progressMade = true;
+      continue;
+    }
+
+    // 若本轮无任何规则可推进，则说明陷入需要猜测的死局
+    if (!progressMade) {
+      return {
+        solvable: false,
+        reason: 'DEADLOCK_GUESS_REQUIRED',
+        revealedCount,
+        totalNonMines,
+        flaggedCount,
+        steps
+      };
+    }
+  }
+
+  const isWon = revealedCount >= totalNonMines;
+  return {
+    solvable: isWon,
+    reason: isWon ? undefined : 'EXCEEDED_MAX_STEPS',
+    revealedCount,
+    totalNonMines,
+    flaggedCount,
+    steps
+  };
+}
+
+
+// --- 模块 3: AI 对局生成与校验 (AI Validator) ---
 /**
  * AI 对局生成器与校验层 (AI Board Generator & Validator)
  * 
  * 职责：
- * 1. 构造面向 slot 'boardGeneration' 的结构化对局生成请求。
- * 2. 对 AI 模型返回结果执行严密校验（格式、尺寸、雷数、坐标越界、重复雷位、首击保护）。
- * 3. 校验失败或不可用时无缝降级为确定性本地 fixture，决不盲目信任模型自称有效。
+ * 1. 构造面向 slot 'boardGeneration' 的结构化对局生成请求（强调生成无猜对局）。
+ * 2. 对 AI 模型返回结果执行严密校验（格式、尺寸、雷数、坐标越界、重复雷位、首击保护、以及确定性无猜可解性）。
+ * 3. 校验失败或不可用时无缝降级为确定性本地无猜生成器，决不盲目信任模型自称有效，禁止把未经验证随机局标为无猜。
  */
+
 
 
 
@@ -461,8 +766,8 @@ function createBoardGenerationRequest({
   firstClick = null
 }) {
   const safeText = firstClick
-    ? `首击坐标 (${firstClick.row}, ${firstClick.col}) 必须绝对安全，严禁在此位置及周边布置地雷。`
-    : '请生成随机雷位。';
+    ? `首击坐标 (${firstClick.row}, ${firstClick.col}) 及其周围严禁布置地雷（必须保证首击为空白开阔区或可推导安全格）。生成的对局必须完全可通过逻辑推理解开（严禁生成必须凭纯运气猜雷的对局）。`
+    : '请生成完全可通过逻辑推理无猜解开的扫雷对局。';
 
   return {
     slot,
@@ -470,11 +775,11 @@ function createBoardGenerationRequest({
     messages: [
       {
         role: 'system',
-        text: '你是一个扫雷棋盘对局生成器。按照指定的行列与雷数生成地雷位置，格式必须符合 JSON Schema。'
+        text: '你是一个专业的扫雷对局生成器。按照指定的行列与雷数生成地雷位置，格式符合 JSON Schema。核心规则：严禁生成需要纯运气猜雷的分支，生成的局面必须是严格的纯逻辑无猜解（No-Guess）。'
       },
       {
         role: 'user',
-        text: `请为扫雷生成对局：尺寸 ${rows}x${cols}，地雷总数必须严格等于 ${mineCount}。${safeText}`
+        text: `请为扫雷生成无猜对局：尺寸 ${rows}x${cols}，地雷总数严格等于 ${mineCount}。${safeText}`
       }
     ],
     responseSchema: BOARD_GENERATION_SCHEMA
@@ -489,14 +794,16 @@ function createBoardGenerationRequest({
  * @param {number} expectedCols 
  * @param {number} expectedMineCount 
  * @param {{row: number, col: number}|null} [firstClick] 
- * @returns {{ ok: true, mines: Array<{row: number, col: number}> } | { ok: false, reason: string, code: string }}
+ * @param {{ requireNoGuess?: boolean }} [options] 
+ * @returns {{ ok: true, mines: Array<{row: number, col: number}>, noGuessVerified: boolean, steps?: number } | { ok: false, reason: string, code: string, solver?: object }}
  */
 function validateBoardGeneration(
   payload,
   expectedRows,
   expectedCols,
   expectedMineCount,
-  firstClick = null
+  firstClick = null,
+  options = {}
 ) {
   if (!payload || typeof payload !== 'object') {
     return { ok: false, code: 'INVALID_PAYLOAD', reason: '生成结果不是有效的 JSON 对象' };
@@ -565,13 +872,124 @@ function validateBoardGeneration(
         reason: `首击保护违背：在首击坐标 (${firstClick.row}, ${firstClick.col}) 布置了地雷`
       };
     }
+
+    // 5. 确定性无猜可解性校验（首击存在且要求无猜时执行）
+    const requireNoGuess = options.requireNoGuess !== false;
+    if (requireNoGuess) {
+      const solverResult = solveNoGuess(expectedRows, expectedCols, validMines, firstClick);
+      if (!solverResult.solvable) {
+        return {
+          ok: false,
+          code: 'NOT_NO_GUESS_SOLVABLE',
+          reason: `无猜校验失败：对局无法仅凭逻辑推理解开 [${solverResult.reason || 'DEADLOCK_GUESS_REQUIRED'}]，存在纯运气猜雷分支`,
+          solver: solverResult
+        };
+      }
+      return {
+        ok: true,
+        mines: validMines,
+        noGuessVerified: true,
+        steps: solverResult.steps
+      };
+    }
   }
 
-  return { ok: true, mines: validMines };
+  return { ok: true, mines: validMines, noGuessVerified: false };
 }
 
 /**
- * 确定性本地 Fixture 生成器（用于测试与离线安全降级）
+ * 确定性本地无猜棋盘生成器 (Deterministic Local No-Guess Board Generator)
+ * 
+ * 通过围绕首击建立安全开阔区并在候选分布中执行确定性求解验证，
+ * 寻找能在单格直推/双格差集/全局计数规则下完全解开的确定性无猜局。
+ * 若超出最大尝试预算则降级返回随机局，并明确标注 noGuessVerified: false，禁止虚报。
+ */
+function generateNoGuessBoard(rows, cols, mineCount, firstClick = null, seed = 42, maxAttempts = 60) {
+  const totalCells = rows * cols;
+  const targetCount = Math.min(mineCount, totalCells - 1);
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const attemptSeed = (seed + attempt * 7919) >>> 0;
+    const rng = new SeededRNG(attemptSeed);
+
+    // 候选格：首击及其 8 邻域默认作为空白开阔区排除，确保起手开局有足够线索展开
+    const candidatePositions = [];
+    const protectedZone = new Set();
+    if (firstClick && Number.isInteger(firstClick.row) && Number.isInteger(firstClick.col)) {
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          const pr = firstClick.row + dr;
+          const pc = firstClick.col + dc;
+          if (pr >= 0 && pr < rows && pc >= 0 && pc < cols) {
+            protectedZone.add(`${pr},${pc}`);
+          }
+        }
+      }
+    }
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (protectedZone.has(`${r},${c}`)) continue;
+        candidatePositions.push({ row: r, col: c });
+      }
+    }
+
+    // 若安全区排除后候选格少于雷数，则仅排除首击自身
+    let availableCandidates = candidatePositions;
+    if (availableCandidates.length < targetCount) {
+      availableCandidates = [];
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (firstClick && r === firstClick.row && c === firstClick.col) continue;
+          availableCandidates.push({ row: r, col: c });
+        }
+      }
+    }
+
+    // Fisher-Yates 洗牌
+    for (let i = availableCandidates.length - 1; i > 0; i--) {
+      const j = rng.nextInt(0, i + 1);
+      const tmp = availableCandidates[i];
+      availableCandidates[i] = availableCandidates[j];
+      availableCandidates[j] = tmp;
+    }
+
+    const candidateMines = availableCandidates.slice(0, targetCount);
+
+    if (!firstClick) {
+      return {
+        ok: true,
+        mines: candidateMines,
+        noGuessVerified: false,
+        attempts: attempt + 1
+      };
+    }
+
+    // 执行确定性无猜求解验证
+    const solverRes = solveNoGuess(rows, cols, candidateMines, firstClick);
+    if (solverRes.solvable) {
+      return {
+        ok: true,
+        mines: candidateMines,
+        noGuessVerified: true,
+        attempts: attempt + 1,
+        steps: solverRes.steps
+      };
+    }
+  }
+
+  // 超出预算：退回普通确定性首击安全局，明确标注未经验证 (noGuessVerified: false)
+  const fallbackMines = generateFallbackBoard(rows, cols, mineCount, firstClick, seed);
+  return {
+    ok: false,
+    mines: fallbackMines,
+    noGuessVerified: false,
+    warning: 'EXCEEDED_SEARCH_BUDGET'
+  };
+}
+
+/**
+ * 确定性本地基础 Fixture 生成器（首击安全，不保证无猜）
  */
 function generateFallbackBoard(rows, cols, mineCount, firstClick = null, seed = 42) {
   const rng = new SeededRNG(seed);
@@ -599,7 +1017,7 @@ function generateFallbackBoard(rows, cols, mineCount, firstClick = null, seed = 
 }
 
 /**
- * 带有校验和保底降级的对局获取流程
+ * 带有严密无猜校验和保底降级的对局获取流程
  */
 export async function obtainBoardWithValidation({
   sdk,
@@ -608,7 +1026,8 @@ export async function obtainBoardWithValidation({
   mineCount,
   firstClick = null,
   operationId,
-  fallbackSeed = 1001
+  fallbackSeed = 1001,
+  requireNoGuess = true
 }) {
   if (sdk && sdk.ai && typeof sdk.ai.generate === 'function') {
     try {
@@ -625,52 +1044,64 @@ export async function obtainBoardWithValidation({
       const rawOutput = response && response.output ? response.output : response;
       const parsedOutput = typeof rawOutput === 'string' ? JSON.parse(rawOutput) : rawOutput;
 
-      const validation = validateBoardGeneration(parsedOutput, rows, cols, mineCount, firstClick);
+      const validation = validateBoardGeneration(
+        parsedOutput,
+        rows,
+        cols,
+        mineCount,
+        firstClick,
+        { requireNoGuess }
+      );
+
       if (validation.ok) {
         return {
           source: 'ai',
           mines: validation.mines,
           operationId: request.operationId,
           binding: response.binding || null,
-          validated: true
+          validated: true,
+          noGuessVerified: validation.noGuessVerified
         };
       } else {
-        // AI 结果未通过校验，降级为本地 fixture
-        const fallbackMines = generateFallbackBoard(rows, cols, mineCount, firstClick, fallbackSeed);
+        // AI 结果未通过校验（格式不合法或含有死猜），降级为本地确定性无猜生成器
+        const fallbackRes = generateNoGuessBoard(rows, cols, mineCount, firstClick, fallbackSeed);
         return {
           source: 'fallback',
-          mines: fallbackMines,
+          mines: fallbackRes.mines,
           operationId: request.operationId,
           validated: true,
+          noGuessVerified: fallbackRes.noGuessVerified,
           fallbackReason: `AI 结果未通过校验: ${validation.reason} [${validation.code}]`
         };
       }
     } catch (err) {
-      // 调用异常，降级为本地 fixture
-      const fallbackMines = generateFallbackBoard(rows, cols, mineCount, firstClick, fallbackSeed);
+      // 调用异常，降级为本地确定性无猜生成器
+      const fallbackRes = generateNoGuessBoard(rows, cols, mineCount, firstClick, fallbackSeed);
       return {
         source: 'fallback',
-        mines: fallbackMines,
+        mines: fallbackRes.mines,
         operationId,
         validated: true,
+        noGuessVerified: fallbackRes.noGuessVerified,
         fallbackReason: `AI 调用异常: ${err.message}`
       };
     }
   }
 
-  // 无 SDK 环境，直接使用确定性 fixture
-  const fallbackMines = generateFallbackBoard(rows, cols, mineCount, firstClick, fallbackSeed);
+  // 无 SDK 环境，使用确定性本地无猜生成器
+  const fallbackRes = generateNoGuessBoard(rows, cols, mineCount, firstClick, fallbackSeed);
   return {
     source: 'fallback',
-    mines: fallbackMines,
+    mines: fallbackRes.mines,
     operationId: operationId || 'local-fallback',
     validated: true,
+    noGuessVerified: fallbackRes.noGuessVerified,
     fallbackReason: '未接入 SDK 或处于离线 Mock 环境'
   };
 }
 
 
-// --- 模块 3: GameCenter SDK 桥接层 (SDK Client) ---
+// --- 模块 4: GameCenter SDK 桥接层 (SDK Client) ---
 /**
  * 游戏中心 SDK 接入客户端 (GameCenter SDK Client Wrapper)
  * 
@@ -802,7 +1233,7 @@ class GameCenterClientSDK {
 }
 
 
-// --- 模块 4: DOM 渲染与事件控制器 ---
+// --- 模块 5: DOM 渲染与事件控制器 ---
 /**
  * 扫雷 UI 交互控制器与事件绑定
  */
@@ -862,10 +1293,14 @@ function updateDisplays() {
   if (aiBadge && engine.aiInfo) {
     if (engine.aiInfo.source === 'ai') {
       aiBadge.className = 'status-badge badge-ai';
-      aiBadge.textContent = 'AI 生成：已校验通过';
+      aiBadge.textContent = engine.aiInfo.noGuessVerified
+        ? 'AI 生成：无猜校验通过'
+        : 'AI 生成：已校验(非无猜)';
     } else {
       aiBadge.className = 'status-badge badge-fallback';
-      aiBadge.textContent = 'AI 状态：确定性保底';
+      aiBadge.textContent = engine.aiInfo.noGuessVerified
+        ? '本地保底：无猜已验证'
+        : '本地保底：首击安全(未验无猜)';
     }
   }
 
@@ -956,7 +1391,8 @@ async function onCellClick(r, c) {
       source: boardData.source,
       operationId: boardData.operationId,
       binding: boardData.binding,
-      validated: true
+      validated: true,
+      noGuessVerified: boardData.noGuessVerified
     });
 
     startTimer();
