@@ -27,11 +27,11 @@ const bundled = `/**
  * 包含：确定性规则引擎、无猜求解器、AI 校验与保底层、GameCenter SDK 适配层、交互渲染层
  */
 
-// --- 模块 1: 确定性规则引擎 (MinesweeperEngine) ---
-${stripExports(engineCode)}
-
-// --- 模块 2: 确定性无猜求解器 (No-Guess Solver) ---
+// --- 模块 1: 确定性无猜求解器 (No-Guess Solver) ---
 ${stripExports(solverCode)}
+
+// --- 模块 2: 确定性规则引擎 (MinesweeperEngine) ---
+${stripExports(engineCode)}
 
 // --- 模块 3: AI 对局生成与校验 (AI Validator) ---
 ${stripExports(aiCode)}

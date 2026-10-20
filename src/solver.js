@@ -276,11 +276,11 @@ export function solveNoGuess(rows, cols, mines, firstClick) {
       continue;
     }
 
-    // 若本轮无任何规则可推进，则说明陷入需要猜测的死局
+    // 若本轮无任何规则可推进，则当前推理规则下陷入演绎死锁，无法证明全盘无猜
     if (!progressMade) {
       return {
         solvable: false,
-        reason: 'DEADLOCK_GUESS_REQUIRED',
+        reason: 'DEDUCTION_DEADLOCK',
         revealedCount,
         totalNonMines,
         flaggedCount,

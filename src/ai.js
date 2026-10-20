@@ -157,7 +157,7 @@ export function validateBoardGeneration(
         return {
           ok: false,
           code: 'NOT_NO_GUESS_SOLVABLE',
-          reason: `无猜校验失败：对局无法仅凭逻辑推理解开 [${solverResult.reason || 'DEADLOCK_GUESS_REQUIRED'}]，存在纯运气猜雷分支`,
+          reason: `无猜校验未通过：当前求解器基于已知线索无法证明对局全盘无猜 [${solverResult.reason || 'DEDUCTION_DEADLOCK'}]`,
           solver: solverResult
         };
       }
@@ -254,13 +254,12 @@ export function generateNoGuessBoard(rows, cols, mineCount, firstClick = null, s
     }
   }
 
-  // 超出预算：退回普通确定性首击安全局，明确标注未经验证 (noGuessVerified: false)
-  const fallbackMines = generateFallbackBoard(rows, cols, mineCount, firstClick, seed);
+  // 若超出重试预算：决不回退普通随机局，明确报告无法证明无猜，允许调用方重试或阻断开启
   return {
     ok: false,
-    mines: fallbackMines,
-    noGuessVerified: false,
-    warning: 'EXCEEDED_SEARCH_BUDGET'
+    code: 'EXCEEDED_SEARCH_BUDGET',
+    reason: `在 ${maxAttempts} 次尝试中未能基于当前规则证明无猜，已拒绝自动开启猜雷局`,
+    noGuessVerified: false
   };
 }
 
@@ -331,6 +330,7 @@ export async function obtainBoardWithValidation({
 
       if (validation.ok) {
         return {
+          ok: true,
           source: 'ai',
           mines: validation.mines,
           operationId: request.operationId,
@@ -341,37 +341,69 @@ export async function obtainBoardWithValidation({
       } else {
         // AI 结果未通过校验（格式不合法或含有死猜），降级为本地确定性无猜生成器
         const fallbackRes = generateNoGuessBoard(rows, cols, mineCount, firstClick, fallbackSeed);
-        return {
-          source: 'fallback',
-          mines: fallbackRes.mines,
-          operationId: request.operationId,
-          validated: true,
-          noGuessVerified: fallbackRes.noGuessVerified,
-          fallbackReason: `AI 结果未通过校验: ${validation.reason} [${validation.code}]`
-        };
+        if (fallbackRes.ok) {
+          return {
+            ok: true,
+            source: 'fallback',
+            mines: fallbackRes.mines,
+            operationId: request.operationId,
+            validated: true,
+            noGuessVerified: true,
+            fallbackReason: `AI 结果未通过校验: ${validation.reason} [${validation.code}]`
+          };
+        } else {
+          return {
+            ok: false,
+            source: 'none',
+            code: 'NO_GUESS_GENERATION_FAILED',
+            reason: `AI 未过审且本地保底无法证明无猜 (${fallbackRes.reason})，拒绝开启猜雷局`,
+            noGuessVerified: false
+          };
+        }
       }
     } catch (err) {
       // 调用异常，降级为本地确定性无猜生成器
       const fallbackRes = generateNoGuessBoard(rows, cols, mineCount, firstClick, fallbackSeed);
-      return {
-        source: 'fallback',
-        mines: fallbackRes.mines,
-        operationId,
-        validated: true,
-        noGuessVerified: fallbackRes.noGuessVerified,
-        fallbackReason: `AI 调用异常: ${err.message}`
-      };
+      if (fallbackRes.ok) {
+        return {
+          ok: true,
+          source: 'fallback',
+          mines: fallbackRes.mines,
+          operationId,
+          validated: true,
+          noGuessVerified: true,
+          fallbackReason: `AI 调用异常: ${err.message}`
+        };
+      } else {
+        return {
+          ok: false,
+          source: 'none',
+          code: 'NO_GUESS_GENERATION_FAILED',
+          reason: `AI 异常且本地保底无法证明无猜 (${fallbackRes.reason})，拒绝开启猜雷局`,
+          noGuessVerified: false
+        };
+      }
     }
   }
 
   // 无 SDK 环境，使用确定性本地无猜生成器
   const fallbackRes = generateNoGuessBoard(rows, cols, mineCount, firstClick, fallbackSeed);
+  if (fallbackRes.ok) {
+    return {
+      ok: true,
+      source: 'fallback',
+      mines: fallbackRes.mines,
+      operationId: operationId || 'local-fallback',
+      validated: true,
+      noGuessVerified: true,
+      fallbackReason: '未接入 SDK 或处于离线 Mock 环境'
+    };
+  }
   return {
-    source: 'fallback',
-    mines: fallbackRes.mines,
-    operationId: operationId || 'local-fallback',
-    validated: true,
-    noGuessVerified: fallbackRes.noGuessVerified,
-    fallbackReason: '未接入 SDK 或处于离线 Mock 环境'
+    ok: false,
+    source: 'none',
+    code: 'NO_GUESS_GENERATION_FAILED',
+    reason: `本地无猜生成超出预算 (${fallbackRes.reason})，拒绝开启猜雷局`,
+    noGuessVerified: false
   };
 }

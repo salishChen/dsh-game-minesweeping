@@ -151,6 +151,17 @@ async function onCellClick(r, c) {
       operationId: `mine-turn-${Date.now()}`
     });
 
+    if (!boardData.ok || !boardData.mines) {
+      const face = document.getElementById('face-btn');
+      if (face) face.textContent = '⚠️';
+      const aiBadge = document.getElementById('ai-status-badge');
+      if (aiBadge) {
+        aiBadge.className = 'status-badge badge-fallback';
+        aiBadge.textContent = '生成受阻：无法证明无猜，请点击重试';
+      }
+      return;
+    }
+
     engine.applyMines(boardData.mines, {
       source: boardData.source,
       operationId: boardData.operationId,

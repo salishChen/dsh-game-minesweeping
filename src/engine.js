@@ -8,6 +8,8 @@
  * 4. AI 仅用于生成对局（棋盘尺寸与雷位），不参与局内裁决与动态改雷。
  */
 
+import { solveNoGuess } from './solver.js';
+
 /**
  * 简易且确定性的 32 位伪随机数生成器 (Mulberry32)
  */
@@ -98,15 +100,67 @@ export class MinesweeperEngine {
   }
 
   /**
-   * 本地确定性生成对局雷位，确保首击位置安全（首击保护）
+   * 本地确定性生成对局雷位，确保首击位置安全
+   * 可选 requireNoGuess 执行无猜验证
    * @param {number} safeRow 
    * @param {number} safeCol 
+   * @param {{ requireNoGuess?: boolean, maxAttempts?: number }} [options]
    */
-  generateDeterministicMines(safeRow, safeCol) {
+  generateDeterministicMines(safeRow, safeCol, options = {}) {
     const totalCells = this.rows * this.cols;
     const maxMines = Math.min(this.mineCount, totalCells - 1);
-    const candidatePositions = [];
 
+    if (options.requireNoGuess) {
+      const maxAttempts = options.maxAttempts || 80;
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const candidatePositions = [];
+        const protectedZone = new Set();
+        for (let dr = -1; dr <= 1; dr++) {
+          for (let dc = -1; dc <= 1; dc++) {
+            const pr = safeRow + dr;
+            const pc = safeCol + dc;
+            if (pr >= 0 && pr < this.rows && pc >= 0 && pc < this.cols) {
+              protectedZone.add(`${pr},${pc}`);
+            }
+          }
+        }
+        for (let r = 0; r < this.rows; r++) {
+          for (let c = 0; c < this.cols; c++) {
+            if (protectedZone.has(`${r},${c}`)) continue;
+            candidatePositions.push({ row: r, col: c });
+          }
+        }
+        if (candidatePositions.length < maxMines) {
+          candidatePositions.length = 0;
+          for (let r = 0; r < this.rows; r++) {
+            for (let c = 0; c < this.cols; c++) {
+              if (r === safeRow && c === safeCol) continue;
+              candidatePositions.push({ row: r, col: c });
+            }
+          }
+        }
+        for (let i = candidatePositions.length - 1; i > 0; i--) {
+          const j = this.rng.nextInt(0, i + 1);
+          const temp = candidatePositions[i];
+          candidatePositions[i] = candidatePositions[j];
+          candidatePositions[j] = temp;
+        }
+        const mines = candidatePositions.slice(0, maxMines);
+        const res = solveNoGuess(this.rows, this.cols, mines, { row: safeRow, col: safeCol });
+        if (res.solvable) {
+          this.applyMines(mines, {
+            source: 'deterministic-fallback',
+            validated: true,
+            noGuessVerified: true,
+            steps: res.steps
+          });
+          return mines;
+        }
+      }
+    }
+
+    // 基础确定性首击安全布局（保证与既有 18 项单测的 RNG 序列与棋盘完全一致）
+    const candidatePositions = [];
     for (let r = 0; r < this.rows; r++) {
       for (let c = 0; c < this.cols; c++) {
         if (r === safeRow && c === safeCol) continue;
@@ -114,7 +168,6 @@ export class MinesweeperEngine {
       }
     }
 
-    // Fisher-Yates 洗牌算法取前 maxMines 个
     for (let i = candidatePositions.length - 1; i > 0; i--) {
       const j = this.rng.nextInt(0, i + 1);
       const temp = candidatePositions[i];
@@ -123,9 +176,11 @@ export class MinesweeperEngine {
     }
 
     const mines = candidatePositions.slice(0, maxMines);
+    const solverRes = solveNoGuess(this.rows, this.cols, mines, { row: safeRow, col: safeCol });
     this.applyMines(mines, {
       source: 'deterministic-fallback',
-      validated: true
+      validated: true,
+      noGuessVerified: solverRes.solvable
     });
     return mines;
   }
