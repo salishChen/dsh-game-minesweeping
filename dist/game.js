@@ -1,10 +1,12 @@
 /**
  * DSH GameCenter - 扫雷自包含前端运行时产物 (Bundled dist/game.js)
- * 包含：确定性规则引擎、无猜求解器、AI 校验与保底层、GameCenter SDK 适配层、交互渲染层
+ * 经典自包含 IIFE 脚本（无顶层 export/import，无模块加载依赖）
  */
+(() => {
+  'use strict';
 
-// --- 模块 1: 确定性无猜求解器 (No-Guess Solver) ---
-/**
+  // --- 模块 1: 确定性无猜求解器 (No-Guess Solver) ---
+  /**
  * 确定性无猜求解器 (Deterministic No-Guess Minesweeper Solver)
  * 
  * 推理规则范围 (Deduction Rule Scope):
@@ -307,8 +309,8 @@ function solveNoGuess(rows, cols, mines, firstClick) {
 }
 
 
-// --- 模块 2: 确定性规则引擎 (MinesweeperEngine) ---
-/**
+  // --- 模块 2: 确定性规则引擎 (MinesweeperEngine) ---
+  /**
  * 确定性扫雷规则引擎 (Minesweeper Deterministic Rule Engine)
  * 
  * 职责：
@@ -818,8 +820,8 @@ class MinesweeperEngine {
 }
 
 
-// --- 模块 3: AI 对局生成与校验 (AI Validator) ---
-/**
+  // --- 模块 3: AI 对局生成与校验 (AI Validator) ---
+  /**
  * AI 对局生成器与校验层 (AI Board Generator & Validator)
  * 
  * 职责：
@@ -1230,8 +1232,8 @@ async function obtainBoardWithValidation({
 }
 
 
-// --- 模块 4: GameCenter SDK 桥接层 (SDK Client) ---
-/**
+  // --- 模块 4: GameCenter SDK 桥接层 (SDK Client) ---
+  /**
  * 游戏中心 SDK 接入客户端 (GameCenter SDK Client Wrapper)
  * 
  * 职责：
@@ -1535,8 +1537,8 @@ class GameCenterClientSDK {
 }
 
 
-// --- 模块 5: DOM 渲染与事件控制器 ---
-/**
+  // --- 模块 5: DOM 渲染与事件控制器 ---
+  /**
  * 扫雷 UI 交互控制器与事件绑定
  */
 
@@ -1876,5 +1878,6 @@ function initApp() {
 }
 
 
-// 启动入口
-initApp();
+  // 启动入口
+  initApp();
+})();

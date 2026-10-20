@@ -28,26 +28,29 @@ function stripExports(code) {
 
 const bundled = `/**
  * DSH GameCenter - 扫雷自包含前端运行时产物 (Bundled dist/game.js)
- * 包含：确定性规则引擎、无猜求解器、AI 校验与保底层、GameCenter SDK 适配层、交互渲染层
+ * 经典自包含 IIFE 脚本（无顶层 export/import，无模块加载依赖）
  */
+(() => {
+  'use strict';
 
-// --- 模块 1: 确定性无猜求解器 (No-Guess Solver) ---
-${stripExports(solverCode)}
+  // --- 模块 1: 确定性无猜求解器 (No-Guess Solver) ---
+  ${stripExports(solverCode)}
 
-// --- 模块 2: 确定性规则引擎 (MinesweeperEngine) ---
-${stripExports(engineCode)}
+  // --- 模块 2: 确定性规则引擎 (MinesweeperEngine) ---
+  ${stripExports(engineCode)}
 
-// --- 模块 3: AI 对局生成与校验 (AI Validator) ---
-${stripExports(aiCode)}
+  // --- 模块 3: AI 对局生成与校验 (AI Validator) ---
+  ${stripExports(aiCode)}
 
-// --- 模块 4: GameCenter SDK 桥接层 (SDK Client) ---
-${stripExports(sdkCode)}
+  // --- 模块 4: GameCenter SDK 桥接层 (SDK Client) ---
+  ${stripExports(sdkCode)}
 
-// --- 模块 5: DOM 渲染与事件控制器 ---
-${stripExports(uiCode)}
+  // --- 模块 5: DOM 渲染与事件控制器 ---
+  ${stripExports(uiCode)}
 
-// 启动入口
-initApp();
+  // 启动入口
+  initApp();
+})();
 `;
 
 const distDir = path.join(rootDir, 'dist');
