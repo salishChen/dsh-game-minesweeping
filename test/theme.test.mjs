@@ -57,35 +57,30 @@ test('Theme - 官方 host.push 单向推送协议（遵守平台 resolved active
   channel.port2.close();
 });
 
-test('Theme - 受控 MessagePort 驱动主题切换与协议应答（兼容过渡）', async () => {
+test('Theme - 严格协议防线（旧 theme:change 彻底失效，非法 source 拒收）', async () => {
   const channel = new MessageChannel();
   const sdk = new GameCenterClientSDK({ port: channel.port1 });
 
-  let hostReceivedAck = null;
-  channel.port2.on('message', (msg) => {
-    if (msg.type === 'theme:ack') {
-      hostReceivedAck = msg;
-    }
-  });
-
-  // 宿主通过配对的 port 发送深色模式切换指令
+  // 1. 旧版过渡消息格式 theme:change 已彻底被移除，必须被完全忽略
   channel.port2.postMessage({
     bridgeVersion: 1,
     type: 'theme:change',
-    requestId: 'req-theme-1',
+    requestId: 'req-theme-old',
     colorScheme: 'dark'
   });
-
-  // 等待事件微任务处理
   await new Promise((r) => setTimeout(r, 20));
+  assert.equal(sdk.theme.get(), 'light'); // 必须维持默认，不生效
 
-  assert.equal(sdk.theme.get(), 'dark');
-  assert.equal(sdk.theme.isManagedByHost(), true);
-  assert.ok(hostReceivedAck);
-  assert.equal(hostReceivedAck.requestId, 'req-theme-1');
-  assert.equal(hostReceivedAck.theme, 'dark');
+  // 2. 官方 host.push 但 payload.source 非法（必须是 dsh 或 os）
+  channel.port2.postMessage({
+    kind: 'host.push',
+    event: 'theme',
+    seq: 1,
+    payload: { mode: 'dark', source: 'invalid-martian' }
+  });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(sdk.theme.get(), 'light'); // 严密拒收，不生效
 
-  // 清理端口
   channel.port1.close();
   channel.port2.close();
 });

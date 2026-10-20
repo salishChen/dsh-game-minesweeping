@@ -1388,7 +1388,13 @@ class GameCenterClientSDK {
       // 2. 官方 Host -> 游戏 单向推送协议 (HostPushEnvelope: kind === 'host.push' && event === 'theme')
       if (data.kind === 'host.push' && data.event === 'theme') {
         const { seq, payload } = data;
-        if (typeof seq === 'number' && Number.isSafeInteger(seq) && payload && typeof payload === 'object') {
+        if (
+          typeof seq === 'number' &&
+          Number.isSafeInteger(seq) &&
+          payload &&
+          typeof payload === 'object' &&
+          (payload.source === 'dsh' || payload.source === 'os')
+        ) {
           // 序号单调递增，丢弃乱序/旧推送
           if (seq <= this.lastPushSeq) {
             return;
@@ -1399,23 +1405,6 @@ class GameCenterClientSDK {
           if (mode === 'dark' || mode === 'light') {
             // 遵从平台服务 resolved active mode 下发，不论 source 是 dsh 还是 os，宿主推送均具权威性
             this.applyTheme(mode, true);
-          }
-        }
-        return;
-      }
-
-      // 兼容过渡: theme:change 或 dsh-gamecenter:theme-change
-      if (data.type === 'theme:change' || data.type === 'dsh-gamecenter:theme-change') {
-        const theme = data.colorScheme || data.payload?.colorScheme || data.theme || data.payload?.theme;
-        if (theme === 'dark' || theme === 'light') {
-          this.applyTheme(theme, true);
-          if (data.requestId && typeof this.port.postMessage === 'function') {
-            this.port.postMessage({
-              bridgeVersion: 1,
-              type: 'theme:ack',
-              requestId: data.requestId,
-              theme
-            });
           }
         }
         return;
