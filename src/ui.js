@@ -133,6 +133,11 @@ function renderBoard() {
         await onCellClick(r, c);
       });
 
+      cellEl.addEventListener('dblclick', async (e) => {
+        e.preventDefault();
+        await onCellDoubleClick(r, c);
+      });
+
       cellEl.addEventListener('contextmenu', async (e) => {
         e.preventDefault();
         await onCellRightClick(r, c);
@@ -205,6 +210,19 @@ async function onCellRightClick(r, c) {
   const res = engine.toggleFlag(r, c);
   if (res.changed) {
     renderBoard();
+    await triggerCheckpoint();
+  }
+}
+
+async function onCellDoubleClick(r, c) {
+  if (engine.status !== 'playing') return;
+
+  const res = engine.chord(r, c);
+  if (res.changed) {
+    renderBoard();
+    if (engine.status === 'won' || engine.status === 'lost') {
+      stopTimer();
+    }
     await triggerCheckpoint();
   }
 }

@@ -612,6 +612,76 @@ class MinesweeperEngine {
     return { action: 'reveal', changed: true, status: this.status };
   }
 
+  /**
+   * 双击/快捷开格 (Chord Reveal):
+   * 当已翻开数字格子周围标记的旗子数等于其相邻雷数时，快捷翻开周围所有未标记未翻开的邻居格子。
+   * @param {number} row 
+   * @param {number} col 
+   * @returns {{ action: string, changed: boolean, status: string }}
+   */
+  chord(row, col) {
+    if (this.status !== 'playing') {
+      return { action: 'chord', changed: false, status: this.status };
+    }
+
+    if (row < 0 || row >= this.rows || col < 0 || col >= this.cols) {
+      return { action: 'chord', changed: false, status: this.status };
+    }
+
+    const cell = this.cells[row][col];
+    if (cell.state !== 'revealed' || cell.adjacentMines === 0 || cell.isMine) {
+      return { action: 'chord', changed: false, status: this.status };
+    }
+
+    // 统计周围 8 邻域插旗数与收集未翻开格子
+    let flagCount = 0;
+    const neighbors = [];
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        if (dr === 0 && dc === 0) continue;
+        const nr = row + dr;
+        const nc = col + dc;
+        if (nr >= 0 && nr < this.rows && nc >= 0 && nc < this.cols) {
+          const nCell = this.cells[nr][nc];
+          if (nCell.state === 'flagged') flagCount++;
+          neighbors.push(nCell);
+        }
+      }
+    }
+
+    // 周围旗数必须恰好等于该格相邻雷数才触发
+    if (flagCount !== cell.adjacentMines) {
+      return { action: 'chord', changed: false, status: this.status };
+    }
+
+    let changed = false;
+    let hitMine = false;
+    for (const n of neighbors) {
+      if (n.state === 'unrevealed') {
+        changed = true;
+        if (n.isMine) {
+          n.state = 'revealed';
+          hitMine = true;
+        } else {
+          this.floodReveal(n.row, n.col);
+        }
+      }
+    }
+
+    if (hitMine) {
+      this.status = 'lost';
+      this.revealAllMines();
+      return { action: 'chord', changed: true, status: this.status };
+    }
+
+    if (this.checkWinCondition()) {
+      this.status = 'won';
+      this.autoFlagRemainingMines();
+    }
+
+    return { action: 'chord', changed, status: this.status };
+  }
+
   hasMinesPlaced() {
     let count = 0;
     for (let r = 0; r < this.rows; r++) {
@@ -1673,6 +1743,11 @@ function renderBoard() {
         await onCellClick(r, c);
       });
 
+      cellEl.addEventListener('dblclick', async (e) => {
+        e.preventDefault();
+        await onCellDoubleClick(r, c);
+      });
+
       cellEl.addEventListener('contextmenu', async (e) => {
         e.preventDefault();
         await onCellRightClick(r, c);
@@ -1745,6 +1820,19 @@ async function onCellRightClick(r, c) {
   const res = engine.toggleFlag(r, c);
   if (res.changed) {
     renderBoard();
+    await triggerCheckpoint();
+  }
+}
+
+async function onCellDoubleClick(r, c) {
+  if (engine.status !== 'playing') return;
+
+  const res = engine.chord(r, c);
+  if (res.changed) {
+    renderBoard();
+    if (engine.status === 'won' || engine.status === 'lost') {
+      stopTimer();
+    }
     await triggerCheckpoint();
   }
 }

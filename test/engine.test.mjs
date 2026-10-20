@@ -147,3 +147,53 @@ test('A7 - 虚拟时钟与暂停恢复：暂停时不累积时间，恢复后不
   engine.tick(500);
   assert.equal(engine.elapsedMs, 1500);
 });
+
+test('A7 - 双击快捷开格 (Chord Reveal)：插旗正确时快捷揭开周围安全格', () => {
+  const engine = new MinesweeperEngine({ rows: 3, cols: 3, mineCount: 2 });
+  // (0, 0) 和 (0, 2) 是雷
+  engine.applyMines([{ row: 0, col: 0 }, { row: 0, col: 2 }]);
+  engine.status = 'playing';
+
+  // 翻开 (2, 1)，展开后 (1, 1) 为数字 2，(0, 1) 未翻开
+  engine.reveal(2, 1);
+  assert.equal(engine.cells[1][1].state, 'revealed');
+  assert.equal(engine.cells[1][1].adjacentMines, 2);
+  assert.equal(engine.cells[0][1].state, 'unrevealed');
+
+  // 未标够旗子时双击 (1, 1)，不触发连开
+  const resNoFlag = engine.chord(1, 1);
+  assert.equal(resNoFlag.changed, false);
+  assert.equal(engine.cells[0][1].state, 'unrevealed');
+
+  // 正确标记 (0, 0) 和 (0, 2) 为旗子
+  engine.toggleFlag(0, 0);
+  engine.toggleFlag(0, 2);
+  assert.equal(engine.cells[0][0].state, 'flagged');
+  assert.equal(engine.cells[0][2].state, 'flagged');
+
+  // 双击 (1, 1)，旗数 (2) === adjacentMines (2)，周围未标记格 (0, 1) 快捷翻开
+  const resChord = engine.chord(1, 1);
+  assert.equal(resChord.changed, true);
+  assert.equal(engine.cells[0][1].state, 'revealed');
+  assert.equal(engine.status, 'won'); // 全盘非雷翻开，判定胜利
+});
+
+test('A7 - 双击快捷开格：标错旗时连开触雷导致失败', () => {
+  const engine = new MinesweeperEngine({ rows: 3, cols: 3, mineCount: 2 });
+  engine.applyMines([{ row: 0, col: 0 }, { row: 0, col: 2 }]);
+  engine.status = 'playing';
+
+  engine.reveal(2, 1);
+  assert.equal(engine.cells[1][1].state, 'revealed');
+
+  // 玩家正确标记了 (0, 0)，但错误将安全格 (0, 1) 插旗
+  engine.toggleFlag(0, 0);
+  engine.toggleFlag(0, 1);
+
+  // 双击 (1, 1)，旗数虽满足但连开导致未标旗的真实地雷 (0, 2) 被翻开
+  const resChordFail = engine.chord(1, 1);
+  assert.equal(resChordFail.changed, true);
+  assert.equal(resChordFail.status, 'lost');
+  assert.equal(engine.status, 'lost');
+  assert.equal(engine.cells[0][2].state, 'revealed');
+});
