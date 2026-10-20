@@ -23,6 +23,7 @@ export class GameCenterClientSDK {
     };
     this.checkpoints = [];
     this.currentRevision = 0;
+    this.lastPushSeq = -1;
 
     // 主题状态：DSH 显式主题具有最高优先级，严格覆盖 OS 偏好
     this.currentTheme = 'light';
@@ -75,11 +76,30 @@ export class GameCenterClientSDK {
       if (!data || typeof data !== 'object') return;
 
       // 1. 协议版本防御校验
-      if (data.bridgeVersion !== 1 && data.bridgeVersion !== undefined) {
+      if (data.bridgeVersion !== 1 && data.bridgeVersion !== undefined && data.kind !== 'host.push') {
         return; // 忽略不兼容或未知版本
       }
 
-      // 2. 主题切换协议 (theme:change 或 dsh-gamecenter:theme-change)
+      // 2. 官方 Host -> 游戏 单向推送协议 (HostPushEnvelope: kind === 'host.push' && event === 'theme')
+      if (data.kind === 'host.push' && data.event === 'theme') {
+        const { seq, payload } = data;
+        if (typeof seq === 'number' && Number.isSafeInteger(seq) && payload && typeof payload === 'object') {
+          // 序号单调递增，丢弃乱序/旧推送
+          if (seq <= this.lastPushSeq) {
+            return;
+          }
+          this.lastPushSeq = seq;
+
+          const mode = payload.mode;
+          const source = payload.source; // 'dsh' | 'os'
+          if (mode === 'dark' || mode === 'light') {
+            this.applyTheme(mode, source === 'dsh');
+          }
+        }
+        return;
+      }
+
+      // 兼容过渡: theme:change 或 dsh-gamecenter:theme-change
       if (data.type === 'theme:change' || data.type === 'dsh-gamecenter:theme-change') {
         const theme = data.colorScheme || data.payload?.colorScheme || data.theme || data.payload?.theme;
         if (theme === 'dark' || theme === 'light') {

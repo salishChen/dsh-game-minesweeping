@@ -4,7 +4,60 @@ import { MessageChannel } from 'node:worker_threads';
 import { GameCenterClientSDK } from '../src/sdk.js';
 import { MinesweeperEngine } from '../src/engine.js';
 
-test('Theme - 受控 MessagePort 驱动主题切换与协议应答', async () => {
+test('Theme - 官方 host.push 单向推送协议（含单调 seq 与 source 优先级）', async () => {
+  const channel = new MessageChannel();
+  const sdk = new GameCenterClientSDK({ port: channel.port1 });
+
+  assert.equal(sdk.theme.get(), 'light');
+  assert.equal(sdk.theme.isLockedByDsh(), false);
+
+  // 1. 推送 OS 来源的主题
+  channel.port2.postMessage({
+    kind: 'host.push',
+    event: 'theme',
+    seq: 1,
+    payload: { mode: 'dark', source: 'os' }
+  });
+  await new Promise((r) => setTimeout(r, 15));
+  assert.equal(sdk.theme.get(), 'dark');
+  assert.equal(sdk.theme.isLockedByDsh(), false);
+
+  // 2. 推送 DSH 显式来源的主题（优先级最高）
+  channel.port2.postMessage({
+    kind: 'host.push',
+    event: 'theme',
+    seq: 2,
+    payload: { mode: 'light', source: 'dsh' }
+  });
+  await new Promise((r) => setTimeout(r, 15));
+  assert.equal(sdk.theme.get(), 'light');
+  assert.equal(sdk.theme.isLockedByDsh(), true);
+
+  // 3. 乱序或旧 seq 推送被严格丢弃 (seq 1 <= 2)
+  channel.port2.postMessage({
+    kind: 'host.push',
+    event: 'theme',
+    seq: 1,
+    payload: { mode: 'dark', source: 'dsh' }
+  });
+  await new Promise((r) => setTimeout(r, 15));
+  assert.equal(sdk.theme.get(), 'light'); // 未被改变
+
+  // 4. 后续 OS 推送不能覆盖 DSH 锁定
+  channel.port2.postMessage({
+    kind: 'host.push',
+    event: 'theme',
+    seq: 3,
+    payload: { mode: 'dark', source: 'os' }
+  });
+  await new Promise((r) => setTimeout(r, 15));
+  assert.equal(sdk.theme.get(), 'light'); // 依然维持 DSH light
+
+  channel.port1.close();
+  channel.port2.close();
+});
+
+test('Theme - 受控 MessagePort 驱动主题切换与协议应答（兼容过渡）', async () => {
   const channel = new MessageChannel();
   const sdk = new GameCenterClientSDK({ port: channel.port1 });
 
@@ -15,12 +68,12 @@ test('Theme - 受控 MessagePort 驱动主题切换与协议应答', async () =>
     }
   });
 
-  // 1. 宿主通过配对的 port 发送深色模式切换指令
+  // 宿主通过配对的 port 发送深色模式切换指令
   channel.port2.postMessage({
     bridgeVersion: 1,
     type: 'theme:change',
     requestId: 'req-theme-1',
-    payload: { theme: 'dark' }
+    colorScheme: 'dark'
   });
 
   // 等待事件微任务处理
