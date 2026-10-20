@@ -3,8 +3,8 @@
 
 > **重要声明 / Notice**:  
 > 本文件为**本地未审批、显式不可安装草稿 (DRAFT_NON_INSTALLABLE)**。  
-> 远端代码库已推送最新提交 `5f10605658e4539828d082264fa7e887d1df6976`（经典纯 IIFE 自包含脚本打包，严格零 export/import 泄露，全套 39/39 测试通过）。  
-> 历史提交 `4601896`、`a017bb4`、`d5c8a36`、`936ffdf`、`358411b`、`1f1a2cd` 及其对应摘要均标为历史记录，不再作为当前发布依据。  
+> 远端代码库已推送最新提交 `83d00ca4ae06e123fa75253818e7e39a3c22b102`（经典纯 IIFE 自包含脚本，严格零 export/import 泄露，经平台 assembleGameDocument 实际装配与 vm.Script 经典解析 100% 验证通过）。  
+> 历史提交 `4601896`、`a017bb4`、`d5c8a36`、`936ffdf`、`358411b`、`5f10605` 及其对应摘要均标为历史记录，不再作为当前发布依据。  
 > 真实浏览器截图在实机验收前按真实情况标注为**未取得**，协议严禁 SVG 媒体，绝不编造虚假截图。  
 > 本草稿等待平台认证与审批流程，不擅自伪造已审批状态。
 
@@ -78,11 +78,11 @@ A modern Web adaptation of classic Minesweeper engineered for the DeepSeek Harne
   },
   "source": {
     "repository": "https://github.com/salishChen/dsh-game-minesweeping.git",
-    "commit": "5f10605658e4539828d082264fa7e887d1df6976",
+    "commit": "83d00ca4ae06e123fa75253818e7e39a3c22b102",
     "ref": "refs/heads/main",
     "manifestPath": "gamecenter.json",
     "manifestDigest": "sha256:77f14d68d0dca420147623b77ece80e3bdaba67a4de3c694bb8790d8b47eb5de",
-    "bundleDigest": "sha256:472d94a18cfa9adb08dcdba77e6fabca556c9eb780075d1d07e26bff164f48f4"
+    "bundleDigest": "sha256:1d41af0d94f4f6e2ed8d2814067f46ac5244dc6e81e6e3ef59f045ff09ef9606"
   }
 }
 ```
