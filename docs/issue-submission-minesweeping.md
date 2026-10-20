@@ -47,10 +47,10 @@
   "source": {
     "repository": "https://github.com/salishChen/dsh-game-minesweeping.git",
     "ref": "refs/heads/main",
-    "commit": "324b3981d5cfe262e80e4515ccd4e3d580e8075d",
+    "commit": "8d415d8c002b3f8d33ad819a90afbbebd49c3f8f",
     "manifestPath": "gamecenter.json",
     "manifestDigest": "sha256:77f14d68d0dca420147623b77ece80e3bdaba67a4de3c694bb8790d8b47eb5de",
-    "bundleDigest": "sha256:86c6708724cfd2f9f6c1a5b8c64f36a81481eaaddadefb31f467e6f095258bf9"
+    "bundleDigest": "sha256:c464f7ff7477a60a74fc19f8aa05274c620d316824f216acd4a132bfffbc5fa9"
   },
   "display": {
     "schemaVersion": 1,
