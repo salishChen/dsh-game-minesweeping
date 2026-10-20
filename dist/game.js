@@ -1115,7 +1115,7 @@ function generateFallbackBoard(rows, cols, mineCount, firstClick = null, seed = 
 /**
  * 带有严密无猜校验和保底降级的对局获取流程
  */
-export async function obtainBoardWithValidation({
+async function obtainBoardWithValidation({
   sdk,
   rows,
   cols,

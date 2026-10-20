@@ -16,10 +16,14 @@ const uiCode = fs.readFileSync(path.join(rootDir, 'src', 'ui.js'), 'utf-8');
 function stripExports(code) {
   return code
     .replace(/import\s+.*?from\s+['"].*?['"];?/g, '')
-    .replace(/export\s+class\s+/g, 'class ')
+    .replace(/export\s+async\s+function\s+/g, 'async function ')
     .replace(/export\s+function\s+/g, 'function ')
+    .replace(/export\s+class\s+/g, 'class ')
     .replace(/export\s+const\s+/g, 'const ')
-    .replace(/export\s+default\s+/g, '');
+    .replace(/export\s+let\s+/g, 'let ')
+    .replace(/export\s+var\s+/g, 'var ')
+    .replace(/export\s+default\s+/g, '')
+    .replace(/export\s*\{[^}]*\};?/g, '');
 }
 
 const bundled = `/**
@@ -49,6 +53,12 @@ initApp();
 const distDir = path.join(rootDir, 'dist');
 if (!fs.existsSync(distDir)) {
   fs.mkdirSync(distDir, { recursive: true });
+}
+
+// 严格断言：自包含产物中绝对不能遗留未处理的 export 关键字
+const exportMatches = bundled.match(/\bexport\s+/g);
+if (exportMatches) {
+  throw new Error(`Bundling failed: found ${exportMatches.length} unstripped export statement(s) in dist/game.js`);
 }
 
 fs.writeFileSync(path.join(distDir, 'game.js'), bundled, 'utf-8');
