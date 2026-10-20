@@ -3,10 +3,10 @@
 
 > **重要声明 / Notice**:  
 > 本文件为**本地未审批、显式不可安装草稿 (DRAFT_NON_INSTALLABLE)**。  
-> 当前游戏源码工作树已完成 DSH 深浅色无损自适应开发，但**尚未获得阶段正式提交授权**。  
-> 遵照项目经理指示与纪律，**严禁将未包含最新主题代码的旧 Commit SHA (4601896) 伪填为当前产物**，且**严禁伪填摘要**。  
+> 远端代码库已推送最新提交 `936ffdf28df07ca7e4c6a1c4e0fe32d1ee9f6cbf`（全套 39/39 测试通过，涵盖无AI经典模式与支持系统跟随随动的官方主题协议）。  
+> 历史提交 `4601896`、`a017bb4`、`d5c8a36` 及其对应摘要均标为历史记录，不再作为当前发布依据。  
 > 真实浏览器截图在实机验收前按真实情况标注为**未取得**，协议严禁 SVG 媒体，绝不编造虚假截图。  
-> 本草稿绝不创建远程 Issue、不执行 push、不发起部署。
+> 本草稿等待平台认证与审批流程，不擅自伪造已审批状态。
 
 ---
 
@@ -78,11 +78,11 @@ A modern Web adaptation of classic Minesweeper engineered for the DeepSeek Harne
   },
   "source": {
     "repository": "https://github.com/salishChen/dsh-game-minesweeping.git",
-    "commit": "PENDING_AUTHORIZATION_COMMIT_SHA",
+    "commit": "936ffdf28df07ca7e4c6a1c4e0fe32d1ee9f6cbf",
     "ref": "refs/heads/main",
     "manifestPath": "gamecenter.json",
-    "manifestDigest": "PENDING_COMMIT_MANIFEST_DIGEST",
-    "bundleDigest": "PENDING_COMMIT_BUNDLE_DIGEST"
+    "manifestDigest": "sha256:77f14d68d0dca420147623b77ece80e3bdaba67a4de3c694bb8790d8b47eb5de",
+    "bundleDigest": "sha256:c1b6020b622c95f24054584973ab17cce1e38cd1a449ad47aba17c685e2920db"
   }
 }
 ```
