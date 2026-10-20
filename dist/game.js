@@ -1258,9 +1258,9 @@ class GameCenterClientSDK {
     this.currentRevision = 0;
     this.lastPushSeq = -1;
 
-    // 主题状态：DSH 显式主题具有最高优先级，严格覆盖 OS 偏好
+    // 主题状态：遵守平台服务 resolved active mode，无配对端口时以 OS 媒体查询为保底
     this.currentTheme = 'light';
-    this.explicitDshThemeLocked = false;
+    this.isManagedByHost = false;
     this.themeListeners = new Set();
 
     this.init();
@@ -1278,13 +1278,13 @@ class GameCenterClientSDK {
     this.setupPortListener();
   }
 
-  applyTheme(theme, isExplicitDsh = false) {
+  applyTheme(theme, isHostPush = false) {
     if (theme !== 'dark' && theme !== 'light') return;
 
-    if (isExplicitDsh) {
-      this.explicitDshThemeLocked = true;
-    } else if (this.explicitDshThemeLocked) {
-      // 若已由 DSH 显式锁定主题，OS 偏好的变动绝不能覆盖 DSH 显式主题
+    if (isHostPush) {
+      this.isManagedByHost = true;
+    } else if (this.isManagedByHost) {
+      // 若已由宿主端口管理主题，本地独立的 matchMedia 变动不覆盖宿主推送
       return;
     }
 
@@ -1324,9 +1324,9 @@ class GameCenterClientSDK {
           this.lastPushSeq = seq;
 
           const mode = payload.mode;
-          const source = payload.source; // 'dsh' | 'os'
           if (mode === 'dark' || mode === 'light') {
-            this.applyTheme(mode, source === 'dsh');
+            // 遵从平台服务 resolved active mode 下发，不论 source 是 dsh 还是 os，宿主推送均具权威性
+            this.applyTheme(mode, true);
           }
         }
         return;
@@ -1430,8 +1430,8 @@ class GameCenterClientSDK {
       }
       if (typeof media.addEventListener === 'function') {
         media.addEventListener('change', (e) => {
-          // 仅当 DSH 未显式指定主题时才跟随 OS
-          if (!this.explicitDshThemeLocked) {
+          // 仅当未接入宿主端口管理时才跟随本地 OS 媒体查询
+          if (!this.isManagedByHost) {
             this.applyTheme(e.matches ? 'dark' : 'light', false);
           }
         });
@@ -1458,7 +1458,7 @@ class GameCenterClientSDK {
   get theme() {
     return {
       get: () => this.currentTheme,
-      isLockedByDsh: () => this.explicitDshThemeLocked,
+      isManagedByHost: () => this.isManagedByHost,
       set: (theme) => {
         this.applyTheme(theme, true);
       },

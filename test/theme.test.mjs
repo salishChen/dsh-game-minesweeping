@@ -4,12 +4,12 @@ import { MessageChannel } from 'node:worker_threads';
 import { GameCenterClientSDK } from '../src/sdk.js';
 import { MinesweeperEngine } from '../src/engine.js';
 
-test('Theme - 官方 host.push 单向推送协议（含单调 seq 与 source 优先级）', async () => {
+test('Theme - 官方 host.push 单向推送协议（遵守平台 resolved active mode 与单调 seq）', async () => {
   const channel = new MessageChannel();
   const sdk = new GameCenterClientSDK({ port: channel.port1 });
 
   assert.equal(sdk.theme.get(), 'light');
-  assert.equal(sdk.theme.isLockedByDsh(), false);
+  assert.equal(sdk.theme.isManagedByHost(), false);
 
   // 1. 推送 OS 来源的主题
   channel.port2.postMessage({
@@ -20,9 +20,9 @@ test('Theme - 官方 host.push 单向推送协议（含单调 seq 与 source 优
   });
   await new Promise((r) => setTimeout(r, 15));
   assert.equal(sdk.theme.get(), 'dark');
-  assert.equal(sdk.theme.isLockedByDsh(), false);
+  assert.equal(sdk.theme.isManagedByHost(), true);
 
-  // 2. 推送 DSH 显式来源的主题（优先级最高）
+  // 2. 推送 DSH 显式来源的主题
   channel.port2.postMessage({
     kind: 'host.push',
     event: 'theme',
@@ -31,7 +31,7 @@ test('Theme - 官方 host.push 单向推送协议（含单调 seq 与 source 优
   });
   await new Promise((r) => setTimeout(r, 15));
   assert.equal(sdk.theme.get(), 'light');
-  assert.equal(sdk.theme.isLockedByDsh(), true);
+  assert.equal(sdk.theme.isManagedByHost(), true);
 
   // 3. 乱序或旧 seq 推送被严格丢弃 (seq 1 <= 2)
   channel.port2.postMessage({
@@ -43,7 +43,7 @@ test('Theme - 官方 host.push 单向推送协议（含单调 seq 与 source 优
   await new Promise((r) => setTimeout(r, 15));
   assert.equal(sdk.theme.get(), 'light'); // 未被改变
 
-  // 4. 后续 OS 推送不能覆盖 DSH 锁定
+  // 4. 当 DSH 切换回跟随系统 (source: os) 时，能够合法随动更新 resolved active mode，不会永久死锁
   channel.port2.postMessage({
     kind: 'host.push',
     event: 'theme',
@@ -51,7 +51,7 @@ test('Theme - 官方 host.push 单向推送协议（含单调 seq 与 source 优
     payload: { mode: 'dark', source: 'os' }
   });
   await new Promise((r) => setTimeout(r, 15));
-  assert.equal(sdk.theme.get(), 'light'); // 依然维持 DSH light
+  assert.equal(sdk.theme.get(), 'dark'); // 成功随动切换至 dark
 
   channel.port1.close();
   channel.port2.close();
@@ -80,7 +80,7 @@ test('Theme - 受控 MessagePort 驱动主题切换与协议应答（兼容过�
   await new Promise((r) => setTimeout(r, 20));
 
   assert.equal(sdk.theme.get(), 'dark');
-  assert.equal(sdk.theme.isLockedByDsh(), true);
+  assert.equal(sdk.theme.isManagedByHost(), true);
   assert.ok(hostReceivedAck);
   assert.equal(hostReceivedAck.requestId, 'req-theme-1');
   assert.equal(hostReceivedAck.theme, 'dark');
@@ -119,22 +119,21 @@ test('Theme - 伪造来源防御（非法版本、非法主题字符串被安全
   channel.port2.close();
 });
 
-test('Theme - OS 偏好与 DSH 冲突时，DSH 显式主题具有绝对优先级', () => {
+test('Theme - 本地独立运行时 OS 偏好作为保底，宿主接入后以宿主为准', () => {
   const sdk = new GameCenterClientSDK();
 
-  // 模拟初始 OS 为 dark
-  sdk.applyTheme('dark', false); // false 代表 OS 保底
+  // 本地独立运行（无宿主端口）时：
+  sdk.applyTheme('dark', false); // false 代表本地环境
   assert.equal(sdk.theme.get(), 'dark');
-  assert.equal(sdk.theme.isLockedByDsh(), false);
+  assert.equal(sdk.theme.isManagedByHost(), false);
 
-  // DSH 显式下发 light
-  sdk.applyTheme('light', true); // true 代表 DSH 显式下发
+  // 宿主端口接入并推送 light
+  sdk.applyTheme('light', true); // true 代表来自宿主推送
   assert.equal(sdk.theme.get(), 'light');
-  assert.equal(sdk.theme.isLockedByDsh(), true);
+  assert.equal(sdk.theme.isManagedByHost(), true);
 
-  // 随后 OS 偏好又发生改变（例如操作系统切回 dark）
+  // 宿主介入后，本地独立的媒体查询事件不再生效
   sdk.applyTheme('dark', false);
-  // DSH 显式锁定生效，OS 改变绝不能覆盖 DSH
   assert.equal(sdk.theme.get(), 'light');
 });
 
