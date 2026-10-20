@@ -28,7 +28,7 @@ function stripExports(code) {
 
 const bundled = `/**
  * DSH GameCenter - 扫雷自包含前端运行时产物 (Bundled dist/game.js)
- * 经典自包含 IIFE 脚本（无顶层 export/import，无模块加载依赖）
+ * 经典自包含 IIFE 脚本
  */
 (() => {
   'use strict';
@@ -58,10 +58,14 @@ if (!fs.existsSync(distDir)) {
   fs.mkdirSync(distDir, { recursive: true });
 }
 
-// 严格断言：自包含产物中绝对不能遗留未处理的 export 关键字
+// 严格断言：自包含产物中绝对不能遗留未处理的 export/import 关键字（防范宿主 assembler 误拦截）
 const exportMatches = bundled.match(/\bexport\s+/g);
 if (exportMatches) {
   throw new Error(`Bundling failed: found ${exportMatches.length} unstripped export statement(s) in dist/game.js`);
+}
+const importMatches = bundled.match(/\bimport\b/gi);
+if (importMatches) {
+  throw new Error(`Bundling failed: found ${importMatches.length} unstripped import keyword(s) in dist/game.js`);
 }
 
 fs.writeFileSync(path.join(distDir, 'game.js'), bundled, 'utf-8');

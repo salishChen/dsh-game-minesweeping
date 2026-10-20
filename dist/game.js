@@ -1,6 +1,6 @@
 /**
  * DSH GameCenter - 扫雷自包含前端运行时产物 (Bundled dist/game.js)
- * 经典自包含 IIFE 脚本（无顶层 export/import，无模块加载依赖）
+ * 经典自包含 IIFE 脚本
  */
 (() => {
   'use strict';
